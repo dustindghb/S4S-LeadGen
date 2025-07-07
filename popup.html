@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>S4S LinkedIn Tool</title>
+  <style>
+    body { 
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+      width: 400px; 
+      margin: 0; 
+      padding: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #333;
+    }
+    
+    .header {
+      background: rgba(255, 255, 255, 0.95);
+      padding: 15px;
+      text-align: center;
+      border-bottom: 2px solid #667eea;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    .header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #667eea;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    
+    .content {
+      padding: 15px;
+      background: white;
+    }
+    
+    .controls {
+      margin-bottom: 15px;
+    }
+    
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      margin: 5px 0;
+      width: 100%;
+      transition: all 0.3s ease;
+    }
+    
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+    
+    .scroll-controls {
+      display: flex;
+      gap: 10px;
+      margin: 10px 0;
+    }
+    
+    .scroll-controls button {
+      flex: 1;
+      margin: 0;
+    }
+    
+    .start-btn {
+      background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
+    }
+    
+    .start-btn:hover {
+      background: linear-gradient(135deg, #218838 0%, #1ea085 100%) !important;
+    }
+    
+    .stop-btn {
+      background: linear-gradient(135deg, #dc3545 0%, #c82333 100%) !important;
+    }
+    
+    .stop-btn:hover {
+      background: linear-gradient(135deg, #c82333 0%, #bd2130 100%) !important;
+    }
+    
+    .stop-btn:disabled {
+      background: #6c757d !important;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    #status {
+      background: #e3f2fd;
+      padding: 10px;
+      border-radius: 5px;
+      margin: 10px 0;
+      font-size: 12px;
+      color: #1976d2;
+      border-left: 4px solid #2196f3;
+    }
+    
+    .json-display {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 15px;
+      margin: 15px 0;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    
+    .download-btn {
+      background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
+      margin-top: 10px;
+    }
+    
+    .download-btn:hover {
+      background: linear-gradient(135deg, #218838 0%, #1ea085 100%) !important;
+    }
+    
+    #download-section {
+      text-align: center;
+      margin: 15px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>S4S LinkedIn Tool</h1>
+  </div>
+  
+  <div class="content">
+    <div class="controls">
+      <button id="extract">Extract Current Posts</button>
+    </div>
+    
+    <div class="lead-finder" style="margin: 15px 0;">
+      <label for="prompt" style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Lead Finding Prompt:</label>
+      <textarea id="prompt" rows="6" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; resize: vertical;" placeholder="Enter your prompt to find leads. Use {data} to reference the LinkedIn posts data.">SYSTEM: You are a JSON-only response bot. You must return ONLY valid JSON. No text, no analysis, no explanations.
+
+TASK: Filter the LinkedIn posts below and return ONLY posts that contain hiring-related keywords.
+
+HIRING KEYWORDS TO LOOK FOR:
+- "hiring", "we're hiring", "looking to hire", "hiring for"
+- "recruiting", "recruiter", "recruitment"
+- "job opportunity", "open position", "job opening", "position available"
+- "join our team", "we're looking for", "apply now", "apply today"
+- "career opportunity", "employment", "job posting"
+
+OUTPUT FORMAT - RETURN ONLY THIS JSON STRUCTURE:
+[
+  {
+    "name": "exact name from post",
+    "headline": "exact headline from post",
+    "linkedin_profile_url": "exact URL from post", 
+    "age": "exact age from post",
+    "message": "exact message from post",
+    "hiring_reason": "keyword found: [specific keyword]"
+  }
+]
+
+RULES:
+1. Return ONLY the JSON array above
+2. No text before or after the JSON
+3. No analysis, categorization, or explanations
+4. If no hiring posts found, return: []
+5. Copy exact values from the original posts
+
+LinkedIn Posts Data:
+{data}</textarea>
+      <button id="findLeads" style="margin-top: 10px; background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%) !important;">Find Leads</button>
+      <button id="testOllama" style="margin-top: 5px; background: linear-gradient(135deg, #6b6bff 0%, #2424ee 100%) !important;">Test Ollama Connection</button>
+      <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">⚠️ Keep popup open during model generation</div>
+    </div>
+    
+    <div class="scroll-controls">
+      <button id="startScroll" class="start-btn">Start Scrolling</button>
+      <button id="stopScroll" class="stop-btn" disabled>Stop Scrolling</button>
+    </div>
+    
+    <div id="status"></div>
+    
+    <div id="download-section" style="display: none;">
+      <button id="downloadJSON" class="download-btn">Download JSON</button>
+    </div>
+    
+    <div id="results"></div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
