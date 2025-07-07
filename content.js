@@ -59,15 +59,38 @@ if (window.s4sContentScriptLoaded) {
         'span[class*="time"]',
         'span[class*="ago"]',
         '.feed-shared-actor__subline time',
-        '.feed-shared-actor__description time'
+        '.feed-shared-actor__description time',
+        '.update-components-actor__sub-description span[aria-hidden="true"]',
+        'span[aria-hidden="true"]',
+        // More specific selectors for the new LinkedIn structure
+        '.feed-shared-actor__subline span[aria-hidden="true"]',
+        '.update-components-actor__sub-description span[aria-hidden="true"]',
+        'span[aria-hidden="true"]:has(li-icon[type="globe-americas"])'
       ];
       
+      console.log(`[S4S] Looking for age in post ${index + 1}`);
       for (const selector of timeSelectors) {
-        const timeElem = post.querySelector(selector);
-        if (timeElem && timeElem.innerText.trim()) {
-          age = timeElem.innerText.trim();
-          break;
+        const timeElems = post.querySelectorAll(selector);
+        console.log(`[S4S] Found ${timeElems.length} elements with selector: ${selector}`);
+        
+        for (const timeElem of timeElems) {
+          if (timeElem && timeElem.innerText.trim()) {
+            const text = timeElem.innerText.trim();
+            console.log(`[S4S] Time element text: "${text}"`);
+            
+            // Look for time patterns like "14h", "2d", "1w", etc.
+            if (text.match(/\d+[hmdw]/) || text.includes('ago') || text.includes('min') || text.includes('hour') || text.includes('day') || text.includes('week')) {
+              // Clean up the text to extract just the time part
+              const timeMatch = text.match(/(\d+[hmdw]|\d+\s*(?:min|hour|day|week)s?)/);
+              if (timeMatch) {
+                age = timeMatch[1];
+                console.log(`[S4S] Found age: ${age}`);
+                break;
+              }
+            }
+          }
         }
+        if (age) break;
       }
       
       // Extract headline using the specific HTML structure provided
