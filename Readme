@@ -1,0 +1,5 @@
+Ollama Command
+export OLLAMA_ORIGINS=chrome-extension://acfgodflnfcmiinhaemaoagakhhmcham
+ollama serve
+
+acfgodflnfcmiinhaemaoagakhhmcham

@@ -46,14 +46,31 @@ if (window.s4sContentScriptLoaded) {
       let headline = '';
       let linkedinUrl = '';
       let age = '';
-      
-      // Extract LinkedIn URL first
+      // Try multiple strategies for profile link
       const profileLink = post.querySelector('a[data-control-name="actor_profile"], a[href*="/in/"]');
-      if (profileLink) {
+      if (profileLink && profileLink.href) {
         linkedinUrl = profileLink.href;
+      } else {
+        // Fallback: look for any anchor with /in/ in href in the post
+        const anyProfile = post.querySelector('a[href*="/in/"]');
+        if (anyProfile && anyProfile.href) {
+          linkedinUrl = anyProfile.href;
+        }
       }
-      
-      // Extract age (time posted)
+      if (!linkedinUrl) {
+        // Try to find from parent containers
+        const header = post.querySelector('.feed-shared-actor__container, .update-components-actor');
+        if (header) {
+          const headerProfile = header.querySelector('a[href*="/in/"]');
+          if (headerProfile && headerProfile.href) {
+            linkedinUrl = headerProfile.href;
+          }
+        }
+      }
+      if (!linkedinUrl) {
+        console.log('[S4S] No LinkedIn URL found for post', post);
+      }
+      // Extract age (time posted) with fallback
       const timeSelectors = [
         'time',
         'span[class*="time"]',
@@ -67,30 +84,37 @@ if (window.s4sContentScriptLoaded) {
         '.update-components-actor__sub-description span[aria-hidden="true"]',
         'span[aria-hidden="true"]:has(li-icon[type="globe-americas"])'
       ];
-      
-      console.log(`[S4S] Looking for age in post ${index + 1}`);
       for (const selector of timeSelectors) {
         const timeElems = post.querySelectorAll(selector);
-        console.log(`[S4S] Found ${timeElems.length} elements with selector: ${selector}`);
-        
         for (const timeElem of timeElems) {
           if (timeElem && timeElem.innerText.trim()) {
             const text = timeElem.innerText.trim();
-            console.log(`[S4S] Time element text: "${text}"`);
-            
-            // Look for time patterns like "14h", "2d", "1w", etc.
             if (text.match(/\d+[hmdw]/) || text.includes('ago') || text.includes('min') || text.includes('hour') || text.includes('day') || text.includes('week')) {
-              // Clean up the text to extract just the time part
               const timeMatch = text.match(/(\d+[hmdw]|\d+\s*(?:min|hour|day|week)s?)/);
               if (timeMatch) {
                 age = timeMatch[1];
-                console.log(`[S4S] Found age: ${age}`);
                 break;
               }
             }
           }
         }
         if (age) break;
+      }
+      if (!age) {
+        // Fallback: look for aria-label or title attributes
+        const timeElem = post.querySelector('time, [aria-label*="ago"], [title*="ago"]');
+        if (timeElem) {
+          const text = timeElem.getAttribute('aria-label') || timeElem.getAttribute('title') || timeElem.innerText;
+          if (text && (text.match(/\d+[hmdw]/) || text.includes('ago') || text.includes('min') || text.includes('hour') || text.includes('day') || text.includes('week'))) {
+            const timeMatch = text.match(/(\d+[hmdw]|\d+\s*(?:min|hour|day|week)s?)/);
+            if (timeMatch) {
+              age = timeMatch[1];
+            }
+          }
+        }
+      }
+      if (!age) {
+        console.log('[S4S] No age/time found for post', post);
       }
       
       // Extract headline using the specific HTML structure provided
@@ -197,10 +221,16 @@ if (window.s4sContentScriptLoaded) {
               !text.includes('1st') && 
               !text.includes('2nd') && 
               !text.includes('3rd+')) {
+            if (index === 0) {
+              console.log('[S4S] First post content extraction:', {selector, text});
+            }
             content = text;
             break;
           }
         }
+      }
+      if (index === 0 && !content) {
+        console.log('[S4S] First post: No content found after all selectors', post);
       }
       
       // Only add posts that have meaningful content

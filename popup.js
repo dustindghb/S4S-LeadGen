@@ -1,3 +1,37 @@
+// Default prompt for lead finding
+const DEFAULT_PROMPT = `SYSTEM: You are a JSON-only response bot. You must return ONLY valid JSON. No text, no analysis, no explanations.
+
+TASK: Filter the LinkedIn posts below and return ONLY posts that contain hiring-related keywords.
+
+HIRING KEYWORDS TO LOOK FOR:
+- "hiring", "we're hiring", "looking to hire", "hiring for"
+- "recruiting", "recruiter", "recruitment"
+- "job opportunity", "open position", "job opening", "position available"
+- "join our team", "we're looking for", "apply now", "apply today"
+- "career opportunity", "employment", "job posting"
+
+OUTPUT FORMAT - RETURN ONLY THIS JSON STRUCTURE:
+[
+  {
+    "name": "exact name from post",
+    "headline": "exact headline from post",
+    "linkedin_profile_url": "exact URL from post", 
+    "age": "exact age from post",
+    "message": "exact message from post",
+    "hiring_reason": "keyword found: [specific keyword]"
+  }
+]
+
+RULES:
+1. Return ONLY the JSON array above
+2. No text before or after the JSON
+3. No analysis, categorization, or explanations
+4. If no hiring posts found, return: []
+5. Copy exact values from the original posts
+
+LinkedIn Posts Data:
+{data}`;
+
 // Function to ensure content script is injected
 async function ensureContentScriptInjected() {
     try {
@@ -241,245 +275,210 @@ RESPONSE: Return ONLY "YES" or "NO"`;
   let currentTabId = null;
   let scrollAbortController = null;
   
-  document.getElementById('extract').addEventListener('click', async () => {
-    try {
-      let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      const statusDiv = document.getElementById('status');
-      const resultsDiv = document.getElementById('results');
-      resultsDiv.innerHTML = '';
-      statusDiv.textContent = 'Ensuring content script is loaded...';
-      
-      // Ensure content script is injected
-      const injected = await ensureContentScriptInjected();
-      if (!injected) {
-        statusDiv.textContent = 'Error: Could not inject content script. Please refresh the LinkedIn page.';
+  // Helper to save and load leads from chrome.storage
+  function saveLeadsToStorage(leads, statusDiv) {
+    return new Promise((resolve) => {
+      if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+        if (statusDiv) statusDiv.textContent = 'Error: chrome.storage.local is not available.';
+        resolve();
         return;
       }
-      
-      // Test if content script is responsive
-      const isResponsive = await testContentScript(tab.id);
-      if (!isResponsive) {
-        statusDiv.textContent = 'Error: Content script not responsive. Please refresh the LinkedIn page.';
-        return;
-      }
-      
-      statusDiv.textContent = 'Extracting posts...';
-      const response = await sendMessage(tab.id, { action: "extractPosts" });
-      
-      if (response && response.posts) {
-        extractedPosts = response.posts;
-        statusDiv.textContent = `Found ${response.posts.length} posts`;
-        displayJSONData(response.posts);
-        if (response.posts.length > 0) {
-          showDownloadButton();
-        }
-      } else {
-        resultsDiv.textContent = 'No posts found or not on LinkedIn feed page.';
-      }
-    } catch (error) {
-      document.getElementById('status').textContent = 'Error: ' + error.message;
-      document.getElementById('results').textContent = 'Failed to extract posts. Please refresh the LinkedIn page and try again.';
-    }
-  });
-  
-  document.getElementById('startScroll').addEventListener('click', async () => {
-    try {
-      let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      const statusDiv = document.getElementById('status');
-      const startBtn = document.getElementById('startScroll');
-      const stopBtn = document.getElementById('stopScroll');
-      
-      currentTabId = tab.id;
-      isScrolling = true;
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-      statusDiv.textContent = 'Preparing to scroll...';
-      
-      // Ensure content script is injected
-      const injected = await ensureContentScriptInjected();
-      if (!injected) {
-        statusDiv.textContent = 'Error: Could not inject content script. Please refresh the LinkedIn page.';
-        resetButtonStates();
-        return;
-      }
-      
-      // Test if content script is responsive
-      const isResponsive = await testContentScript(tab.id);
-      if (!isResponsive) {
-        statusDiv.textContent = 'Error: Content script not responsive. Please refresh the LinkedIn page.';
-        resetButtonStates();
-        return;
-      }
-      
-      statusDiv.textContent = 'Starting scroll...';
-      performScroll();
-    } catch (error) {
-      document.getElementById('status').textContent = 'Error: ' + error.message;
-      resetButtonStates();
-    }
-  });
-  
-  document.getElementById('stopScroll').addEventListener('click', async () => {
-    try {
-      const statusDiv = document.getElementById('status');
-      const startBtn = document.getElementById('startScroll');
-      const stopBtn = document.getElementById('stopScroll');
-      
-      isScrolling = false;
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
-      statusDiv.textContent = `Stopping scroll...`;
-      
-      if (currentTabId) {
-        try {
-          // Send stopScroll to content script
-          await sendMessage(currentTabId, { action: "stopScroll" }, 5000);
-          statusDiv.textContent = `Stopped. Extracting posts...`;
-          
-          // Now extract posts
-          const response = await sendMessage(currentTabId, { action: "extractPosts" });
-          if (response && response.posts) {
-            extractedPosts = response.posts;
-            statusDiv.textContent = `Found ${response.posts.length} posts after scrolling`;
-            displayJSONData(response.posts);
-            if (response.posts.length > 0) {
-              showDownloadButton();
-            }
-          }
-        } catch (error) {
-          statusDiv.textContent = 'Scroll stopped. Please try extracting posts manually.';
-        }
-      }
-    } catch (error) {
-      document.getElementById('status').textContent = 'Error: ' + error.message;
-    }
-  });
-  
-  async function performScroll() {
-    if (!isScrolling || !currentTabId) return;
-    
-    try {
-      const statusDiv = document.getElementById('status');
-      statusDiv.textContent = `Scrolling...`;
-      
-      // Check if content script is still responsive before scrolling
-      const isResponsive = await testContentScript(currentTabId);
-      if (!isResponsive) {
-        statusDiv.textContent = 'Content script became unresponsive. Please refresh the page.';
-        resetButtonStates();
-        return;
-      }
-      
-      const response = await sendMessage(currentTabId, { action: "performSingleScroll" }, 30000);
-      
-      if (response && response.stopped) {
-        statusDiv.textContent = 'Scrolling was stopped.';
-        resetButtonStates();
-        return;
-      }
-      
-      // Check again after scroll completes, before scheduling next scroll
-      if (!isScrolling) return;
-      
-      setTimeout(() => {
-        if (isScrolling) {
-          performScroll();
-        }
-      }, 3000);
-      
-    } catch (error) {
-      const statusDiv = document.getElementById('status');
-      if (error.message.includes('timeout')) {
-        statusDiv.textContent = 'Scroll timeout. Retrying...';
-      } else if (error.message.includes('port closed')) {
-        statusDiv.textContent = 'Connection lost. Please refresh the page.';
-        resetButtonStates();
-        return;
-      } else {
-        statusDiv.textContent = 'Scroll error. Retrying...';
-      }
-      
-      // Retry after delay if still scrolling
-      setTimeout(() => {
-        if (isScrolling) {
-          performScroll();
-        }
-      }, 5000);
-    }
+      chrome.storage.local.set({ foundLeads: leads }, resolve);
+    });
   }
-  
-  function resetButtonStates() {
+  function loadLeadsFromStorage(statusDiv) {
+    return new Promise((resolve) => {
+      if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+        if (statusDiv) statusDiv.textContent = 'Error: chrome.storage.local is not available.';
+        resolve([]);
+        return;
+      }
+      chrome.storage.local.get(['foundLeads'], (result) => {
+        resolve(result.foundLeads || []);
+      });
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const controlsDiv = document.getElementById('controls');
+    const downloadSection = document.getElementById('download-section');
+    let statusDiv = document.getElementById('status');
+    const resultsDiv = document.getElementById('results');
+
+    // Fallback: create statusDiv if missing
+    if (!statusDiv) {
+      const contentDiv = document.querySelector('.content');
+      statusDiv = document.createElement('div');
+      statusDiv.id = 'status';
+      statusDiv.textContent = '';
+      statusDiv.style.background = '#e3f2fd';
+      statusDiv.style.padding = '10px';
+      statusDiv.style.borderRadius = '5px';
+      statusDiv.style.margin = '10px 0';
+      statusDiv.style.fontSize = '12px';
+      statusDiv.style.color = '#1976d2';
+      statusDiv.style.borderLeft = '4px solid #2196f3';
+      if (contentDiv) contentDiv.insertBefore(statusDiv, contentDiv.firstChild);
+    }
+
+    // Button state
+    let foundLeads = [];
+
+    // Restore Start/Stop Scrolling button functionality
     const startBtn = document.getElementById('startScroll');
     const stopBtn = document.getElementById('stopScroll');
-    if (startBtn) startBtn.disabled = false;
-    if (stopBtn) stopBtn.disabled = true;
-    isScrolling = false;
-  }
-  
-  // Function to show download button
-  function showDownloadButton() {
-    const downloadDiv = document.getElementById('download-section');
-    if (downloadDiv) {
-      downloadDiv.style.display = 'block';
+    if (!startBtn || !stopBtn) {
+      statusDiv.textContent = 'Error: Start/Stop Scrolling buttons not found in popup. Please check popup.html.';
+      return;
     }
-  }
-  
-  // Add event listener for Find Leads button
-  document.getElementById('findLeads').addEventListener('click', async () => {
-    try {
-      const statusDiv = document.getElementById('status');
-      const resultsDiv = document.getElementById('results');
-      const promptInput = document.getElementById('prompt');
-      const findLeadsBtn = document.getElementById('findLeads');
-      
-      if (extractedPosts.length === 0) {
+
+    startBtn.addEventListener('click', async () => {
+      try {
+        let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        statusDiv.textContent = 'Preparing to scroll...';
+
+        // Ensure content script is injected
+        const injected = await ensureContentScriptInjected();
+        if (!injected) {
+          statusDiv.textContent = 'Error: Could not inject content script. Please refresh the LinkedIn page.';
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
+          return;
+        }
+
+        // Test if content script is responsive
+        const isResponsive = await testContentScript(tab.id);
+        if (!isResponsive) {
+          statusDiv.textContent = 'Error: Content script not responsive. Please refresh the LinkedIn page.';
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
+          return;
+        }
+
+        statusDiv.textContent = 'Starting scroll...';
+        await sendMessage(tab.id, { action: "performSingleScroll" }, 30000);
+        // Remove: statusDiv.textContent = 'Scroll completed.';
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      } catch (error) {
+        statusDiv.textContent = 'Error: ' + error.message;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      }
+    });
+
+    stopBtn.addEventListener('click', async () => {
+      try {
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        statusDiv.textContent = 'Stopping scroll...';
+
+        let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        await sendMessage(tab.id, { action: "stopScroll" }, 5000);
+        statusDiv.textContent = 'Scrolling stopped. Extracting posts...';
+
+        // Automatically extract posts after stopping scroll
+        const injected = await ensureContentScriptInjected();
+        if (!injected) {
+          statusDiv.textContent = 'Error: Could not inject content script. Please refresh the LinkedIn page.';
+          return;
+        }
+        const isResponsive = await testContentScript(tab.id);
+        if (!isResponsive) {
+          statusDiv.textContent = 'Error: Content script not responsive. Please refresh the LinkedIn page.';
+          return;
+        }
+        const response = await sendMessage(tab.id, { action: "extractPosts" });
+        if (response && response.posts) {
+          extractedPosts = response.posts;
+          statusDiv.textContent = `Found ${response.posts.length} posts after scrolling.`;
+          displayJSONData(response.posts);
+        } else {
+          resultsDiv.textContent = 'No posts found or not on LinkedIn feed page.';
+        }
+      } catch (error) {
+        statusDiv.textContent = 'Error: ' + error.message;
+      }
+    });
+
+    // Create and wire up buttons using components
+    const extractBtn = window.createExtractButton(controlsDiv, async () => {
+      try {
+        let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        statusDiv.textContent = 'Ensuring content script is loaded...';
+        resultsDiv.innerHTML = '';
+        // Ensure content script is injected
+        const injected = await ensureContentScriptInjected();
+        if (!injected) {
+          statusDiv.textContent = 'Error: Could not inject content script. Please refresh the LinkedIn page.';
+          return;
+        }
+        // Test if content script is responsive
+        const isResponsive = await testContentScript(tab.id);
+        if (!isResponsive) {
+          statusDiv.textContent = 'Error: Content script not responsive. Please refresh the LinkedIn page.';
+          return;
+        }
+        statusDiv.textContent = 'Extracting posts...';
+        const response = await sendMessage(tab.id, { action: "extractPosts" });
+        if (response && response.posts) {
+          extractedPosts = response.posts;
+          statusDiv.textContent = `Found ${response.posts.length} posts`;
+          displayJSONData(response.posts);
+        } else {
+          resultsDiv.textContent = 'No posts found or not on LinkedIn feed page.';
+        }
+      } catch (error) {
+        statusDiv.textContent = 'Error: ' + error.message;
+        resultsDiv.textContent = 'Failed to extract posts. Please refresh the LinkedIn page and try again.';
+      }
+    });
+
+    // Remove any duplicate Download CSV buttons
+    downloadSection.innerHTML = '';
+    // (No download button created)
+
+    const findLeadsBtn = window.createFindLeadsButton(controlsDiv, async () => {
+      if (!extractedPosts || extractedPosts.length === 0) {
         statusDiv.textContent = 'Error: No posts extracted yet. Please extract posts first.';
         return;
       }
-      
-      const prompt = promptInput.value.trim();
-      if (!prompt) {
-        statusDiv.textContent = 'Error: Please enter a prompt for lead analysis.';
-        return;
-      }
-      
-      // Disable button and show generating status
       findLeadsBtn.disabled = true;
       findLeadsBtn.textContent = 'Generating Response...';
-      statusDiv.textContent = 'Connecting to Ollama...';
+      statusDiv.textContent = 'Analyzing posts for hiring content...';
       resultsDiv.innerHTML = '';
-      
       try {
-        statusDiv.textContent = 'Starting hiring post analysis...';
-        
-        // Use the new individual post filtering approach
-        const hiringPosts = await filterHiringPosts(extractedPosts, statusDiv);
-        
+        const hiringPosts = [];
+        let processed = 0;
+        for (const post of extractedPosts) {
+          processed++;
+          statusDiv.textContent = `Analyzed ${processed}/${extractedPosts.length} posts...`;
+          try {
+            const isHiring = await checkIfPostIsHiring(post);
+            if (isHiring) {
+              hiringPosts.push(post);
+            }
+          } catch (error) {
+            // Continue with next post even if one fails
+          }
+        }
+        await saveLeadsToStorage(hiringPosts, statusDiv);
+        statusDiv.textContent = `Found ${hiringPosts.length} hiring-related posts!`;
+        const jsonString = JSON.stringify(hiringPosts, null, 2);
+        resultsDiv.innerHTML = `<div class=\"json-display\">${jsonString}</div>`;
         if (hiringPosts.length > 0) {
-          statusDiv.textContent = `Found ${hiringPosts.length} hiring-related posts!`;
-          const jsonString = JSON.stringify(hiringPosts, null, 2);
-          resultsDiv.innerHTML = `<div class="json-display">${jsonString}</div>`;
-        } else {
-          statusDiv.textContent = 'No hiring-related posts found.';
-          resultsDiv.innerHTML = '<div style="color: orange; padding: 10px;">No posts about hiring, recruiting, or job opportunities were found in the extracted data.</div>';
+          exportLeadsToCSV(hiringPosts);
         }
       } catch (error) {
         statusDiv.textContent = `Error: ${error.message}`;
-        resultsDiv.innerHTML = `<div style="color: red; padding: 10px;">Failed to analyze leads: ${error.message}</div>`;
+        resultsDiv.innerHTML = `<div style=\"color: red; padding: 10px;\">Failed to analyze leads: ${error.message}</div>`;
       } finally {
-        // Re-enable button
         findLeadsBtn.disabled = false;
         findLeadsBtn.textContent = 'Find Leads';
       }
-    } catch (error) {
-      document.getElementById('status').textContent = 'Error: ' + error.message;
-      // Re-enable button on error
-      const findLeadsBtn = document.getElementById('findLeads');
-      if (findLeadsBtn) {
-        findLeadsBtn.disabled = false;
-        findLeadsBtn.textContent = 'Find Leads';
-      }
-    }
+    });
   });
 
   // Add event listener for Test Ollama button
@@ -558,17 +557,45 @@ RESPONSE: Return ONLY "YES" or "NO"`;
     }
   });
 
-  // Add event listener for download button
-  document.addEventListener('DOMContentLoaded', function() {
-    const downloadBtn = document.getElementById('downloadJSON');
-    if (downloadBtn) {
-      downloadBtn.addEventListener('click', () => {
-        if (extractedPosts.length > 0) {
-          const jsonData = organizeDataForJSON(extractedPosts);
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-          const filename = `linkedin_posts_${timestamp}.json`;
-          downloadJSON(jsonData, filename);
-        }
-      });
+  // Remove Excel export logic and add CSV export logic
+  function exportLeadsToCSV(leads) {
+    if (!leads || !leads.length) {
+      alert('No leads to export!');
+      return;
     }
-  });
+    // Only these columns: name, headline, profileurl, age, message
+    const headerKeys = [
+      'name',
+      'headline',
+      'profileurl',
+      'age',
+      'message'
+    ];
+    const header = ['Name', 'Headline', 'Profile URL', 'Age', 'Message'];
+    function escapeCSVField(field) {
+      if (field === null || field === undefined) return '';
+      const str = String(field);
+      if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    }
+    // Map each lead to the correct keys, with fallback for profileurl and message
+    const rows = leads.map(lead => [
+      escapeCSVField(lead.name || ''),
+      escapeCSVField(lead.headline || ''),
+      escapeCSVField(lead.profileurl || lead.linkedin_profile_url || lead.linkedinUrl || ''),
+      escapeCSVField(lead.age || ''),
+      escapeCSVField(lead.message || lead.content || '')
+    ]);
+    const csvContent = [header, ...rows].map(e => e.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `linkedin_leads_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }

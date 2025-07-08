@@ -11,7 +11,6 @@
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: #333;
     }
-    
     .header {
       background: rgba(255, 255, 255, 0.95);
       padding: 15px;
@@ -19,7 +18,6 @@
       border-bottom: 2px solid #667eea;
       box-shadow: 0 2px 10px rgba(0,0,0,0.1);
     }
-    
     .header h1 {
       margin: 0;
       font-size: 18px;
@@ -28,16 +26,26 @@
       text-transform: uppercase;
       letter-spacing: 1px;
     }
-    
+    .section-divider {
+      border-bottom: 1px solid #e0e0e0;
+      margin: 18px 0 12px 0;
+    }
     .content {
       padding: 15px;
       background: white;
     }
-    
-    .controls {
+    .controls, .scroll-controls {
       margin-bottom: 15px;
     }
-    
+    .scroll-controls {
+      display: flex;
+      gap: 10px;
+      margin: 0 0 15px 0;
+    }
+    .scroll-controls button {
+      flex: 1;
+      margin: 0;
+    }
     button {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
@@ -51,45 +59,31 @@
       width: 100%;
       transition: all 0.3s ease;
     }
-    
-    button:hover {
+    button:disabled {
+      background: #bdbdbd !important;
+      cursor: not-allowed;
+    }
+    button:hover:enabled {
       transform: translateY(-2px);
       box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
     }
-    
-    .scroll-controls {
-      display: flex;
-      gap: 10px;
-      margin: 10px 0;
-    }
-    
-    .scroll-controls button {
-      flex: 1;
-      margin: 0;
-    }
-    
     .start-btn {
       background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
     }
-    
-    .start-btn:hover {
+    .start-btn:hover:enabled {
       background: linear-gradient(135deg, #218838 0%, #1ea085 100%) !important;
     }
-    
     .stop-btn {
       background: linear-gradient(135deg, #dc3545 0%, #c82333 100%) !important;
     }
-    
-    .stop-btn:hover {
+    .stop-btn:hover:enabled {
       background: linear-gradient(135deg, #c82333 0%, #bd2130 100%) !important;
     }
-    
     .stop-btn:disabled {
       background: #6c757d !important;
       cursor: not-allowed;
       transform: none;
     }
-    
     #status {
       background: #e3f2fd;
       padding: 10px;
@@ -99,7 +93,6 @@
       color: #1976d2;
       border-left: 4px solid #2196f3;
     }
-    
     .json-display {
       background: #f8f9fa;
       border: 1px solid #e9ecef;
@@ -114,19 +107,82 @@
       white-space: pre-wrap;
       word-wrap: break-word;
     }
-    
     .download-btn {
       background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
       margin-top: 10px;
     }
-    
-    .download-btn:hover {
+    .download-btn:hover:enabled {
       background: linear-gradient(135deg, #218838 0%, #1ea085 100%) !important;
     }
-    
     #download-section {
       text-align: center;
       margin: 15px 0;
+    }
+    .prompt-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .prompt-row textarea {
+      flex: 1;
+    }
+    .save-prompt-btn {
+      width: auto;
+      min-width: 100px;
+      margin: 0;
+      padding: 8px 12px;
+      font-size: 13px;
+      background: #ffb300;
+      color: #333;
+      font-weight: 600;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .save-prompt-btn:disabled {
+      background: #ffe082;
+      color: #888;
+      cursor: not-allowed;
+    }
+    .save-prompt-btn:hover:enabled {
+      background: #ffa000;
+    }
+    .prompt-textarea {
+      width: 100%;
+      min-height: 300px;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.4;
+      resize: vertical;
+      background: #f8f9fa;
+      margin-bottom: 10px;
+    }
+    .prompt-textarea:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+    }
+    .prompt-controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .prompt-controls button {
+      flex: 1;
+      padding: 8px 12px;
+      font-size: 13px;
+      margin: 0;
+    }
+    .reset-btn {
+      background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%) !important;
+    }
+    .reset-btn:hover:enabled {
+      background: linear-gradient(135deg, #5a6268 0%, #545b62 100%) !important;
     }
   </style>
 </head>
@@ -134,15 +190,17 @@
   <div class="header">
     <h1>S4S LinkedIn Tool</h1>
   </div>
-  
   <div class="content">
-    <div class="controls">
-      <button id="extract">Extract Current Posts</button>
+    <div class="scroll-controls">
+      <button id="startScroll" class="start-btn">Start Scrolling</button>
+      <button id="stopScroll" class="stop-btn" disabled>Stop Scrolling</button>
     </div>
-    
+    <div class="section-divider"></div>
+    <div class="controls" id="controls"></div>
+    <div class="section-divider"></div>
     <div class="lead-finder" style="margin: 15px 0;">
-      <label for="prompt" style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Lead Finding Prompt:</label>
-      <textarea id="prompt" rows="6" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; resize: vertical;" placeholder="Enter your prompt to find leads. Use {data} to reference the LinkedIn posts data.">SYSTEM: You are a JSON-only response bot. You must return ONLY valid JSON. No text, no analysis, no explanations.
+      <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Lead Finding Prompt:</label>
+      <pre style="white-space: pre-wrap; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 10px; font-size: 12px; margin: 0;">SYSTEM: You are a JSON-only response bot. You must return ONLY valid JSON. No text, no analysis, no explanations.
 
 TASK: Filter the LinkedIn posts below and return ONLY posts that contain hiring-related keywords.
 
@@ -173,26 +231,16 @@ RULES:
 5. Copy exact values from the original posts
 
 LinkedIn Posts Data:
-{data}</textarea>
-      <button id="findLeads" style="margin-top: 10px; background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%) !important;">Find Leads</button>
-      <button id="testOllama" style="margin-top: 5px; background: linear-gradient(135deg, #6b6bff 0%, #2424ee 100%) !important;">Test Ollama Connection</button>
-      <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">WARNING: Keep popup open during model generation</div>
+{data}</pre>
     </div>
-    
-    <div class="scroll-controls">
-      <button id="startScroll" class="start-btn">Start Scrolling</button>
-      <button id="stopScroll" class="stop-btn" disabled>Stop Scrolling</button>
-    </div>
-    
-    <div id="status"></div>
-    
-    <div id="download-section" style="display: none;">
-      <button id="downloadJSON" class="download-btn">Download JSON</button>
-    </div>
-    
+    <div class="section-divider"></div>
     <div id="results"></div>
+    <div id="download-section" style="text-align: center; margin: 15px 0;"></div>
   </div>
-  
+  <script src="exportExcel.js"></script>
+  <script src="extractButton.js"></script>
+  <script src="findLeadsButton.js"></script>
+  <script src="downloadCSVButton.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
