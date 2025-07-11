@@ -538,8 +538,8 @@ if (window.s4sContentScriptLoaded) {
               const activityMatch = dataUrn.match(/urn:li:activity:(\d+)/);
               if (activityMatch) {
                 const activityId = activityMatch[1];
-                // Use the working LinkedIn post URL format
-                postUrl = `https://www.linkedin.com/posts/activity-${activityId}`;
+                // Use the correct working LinkedIn post URL format
+                postUrl = `https://www.linkedin.com/feed/update/urn:li:activity:${activityId}/`;
                 if (index < 3) {
                   console.log(`[S4S] Post ${index + 1} URL constructed from share button URN:`, postUrl);
                 }
@@ -578,8 +578,8 @@ if (window.s4sContentScriptLoaded) {
             }
             
             if (activityId) {
-              // Use the working LinkedIn post URL format
-              postUrl = `https://www.linkedin.com/posts/activity-${activityId}`;
+              // Use the correct working LinkedIn post URL format
+              postUrl = `https://www.linkedin.com/feed/update/urn:li:activity:${activityId}/`;
               if (index < 3) {
                 console.log(`[S4S] Post ${index + 1} URL constructed from URN:`, postUrl);
               }
@@ -614,7 +614,7 @@ if (window.s4sContentScriptLoaded) {
             const activityMatch = href.match(/activity-(\d+)/);
             if (activityMatch) {
               const activityId = activityMatch[1];
-              postUrl = `https://www.linkedin.com/posts/activity-${activityId}`;
+              postUrl = `https://www.linkedin.com/feed/update/urn:li:activity:${activityId}/`;
               if (index < 3) {
                 console.log(`[S4S] Post ${index + 1} URL constructed from activity ID in link:`, postUrl);
               }
@@ -687,6 +687,15 @@ if (window.s4sContentScriptLoaded) {
         const activityIdMatch = cleanUrl.match(/\/posts\/activity-(\d+)/);
         if (activityIdMatch) {
           const activityId = activityIdMatch[1];
+          cleanUrl = `https://www.linkedin.com/feed/update/urn:li:activity:${activityId}/`;
+        }
+      }
+      
+      // Ensure URN format is correct
+      if (cleanUrl.includes('/feed/update/urn:li:activity:')) {
+        const urnMatch = cleanUrl.match(/\/feed\/update\/urn:li:activity:(\d+)/);
+        if (urnMatch) {
+          const activityId = urnMatch[1];
           cleanUrl = `https://www.linkedin.com/feed/update/urn:li:activity:${activityId}/`;
         }
       }
