@@ -118,7 +118,8 @@ async function ensureContentScriptInjected() {
       headline: post.headline || '',
       post_url: post.postUrl || '',
       linkedin_profile_url: post.linkedinUrl || '',
-      age: post.age || '',
+      post_date: post.postDate || '',
+      exact_date: post.exactDate || false,
       post_content: post.content || ''
     }));
   }
@@ -611,16 +612,16 @@ RESPONSE: Return ONLY "YES" or "NO"`;
       alert('No leads to export!');
       return;
     }
-    // Updated columns to include post URL
+    // Updated columns to include post URL and post date
     const headerKeys = [
       'name',
       'headline',
       'posturl',
       'profileurl',
-      'age',
+      'post_date',
       'post_content'
     ];
-    const header = ['Name', 'Headline', 'Post URL', 'Profile URL', 'Age', 'Post Content'];
+    const header = ['Name', 'Headline', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
     function escapeCSVField(field) {
       if (field === null || field === undefined) return '';
       const str = String(field);
@@ -644,7 +645,7 @@ RESPONSE: Return ONLY "YES" or "NO"`;
       escapeCSVField(lead.headline || ''),
       escapeCSVField(lead.posturl || lead.postUrl || ''),
       escapeCSVField(lead.profileurl || lead.linkedin_profile_url || lead.linkedinUrl || ''),
-      escapeCSVField(lead.age || ''),
+      escapeCSVField(lead.post_date || lead.postDate || ''),
       escapeCSVField(lead.post_content || lead.content || '')
     ]);
     const csvContent = [header, ...rows].map(e => e.join(',')).join('\n');

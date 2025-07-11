@@ -92,87 +92,18 @@ if (window.s4sContentScriptLoaded) {
           }
         }
         
-        // Extract age (time posted) with fallback
-        const timeSelectors = [
-          'time',
-          'span[class*="time"]',
-          'span[class*="ago"]',
-          '.feed-shared-actor__subline time',
-          '.feed-shared-actor__description time',
-          '.update-components-actor__sub-description span[aria-hidden="true"]',
-          'span[aria-hidden="true"]',
-          '.feed-shared-actor__subline span[aria-hidden="true"]',
-          '.update-components-actor__sub-description span[aria-hidden="true"]',
-          'span[aria-hidden="true"]:has(li-icon[type="globe-americas"])'
-        ];
-        
-        // Debug logging for first few posts
-        if (index < 3) {
-          console.log(`[S4S] Extracting age for post ${index + 1}`);
-        }
-        
-        for (const selector of timeSelectors) {
-          const timeElems = post.querySelectorAll(selector);
-          for (const timeElem of timeElems) {
-            if (timeElem && timeElem.innerText.trim()) {
-              const text = timeElem.innerText.trim();
-              if (index < 3) {
-                console.log(`[S4S] Post ${index + 1} time text: "${text}"`);
-              }
-              
-              // More comprehensive time pattern matching
-              if (text.match(/\d+[hmdw]/) || text.includes('ago') || text.includes('min') || text.includes('hour') || text.includes('day') || text.includes('week') || text.includes('month') || text.includes('year')) {
-                // Try multiple regex patterns for different formats
-                let timeMatch = text.match(/(\d+)\s*(min|hour|day|week|month|year)s?/i);
-                if (!timeMatch) {
-                  timeMatch = text.match(/(\d+[hmdw])/);
-                }
-                if (!timeMatch) {
-                  timeMatch = text.match(/(\d+)\s*(?:minute|hour|day|week|month|year)s?/i);
-                }
-                
-                if (timeMatch) {
-                  age = timeMatch[1] + (timeMatch[2] ? timeMatch[2].charAt(0) : '');
-                  if (index < 3) {
-                    console.log(`[S4S] Post ${index + 1} age extracted: "${age}" from "${text}"`);
-                  }
-                  break;
-                }
-              }
-            }
-          }
-          if (age) break;
-        }
-        
-        if (!age) {
-          const timeElem = post.querySelector('time, [aria-label*="ago"], [title*="ago"]');
-          if (timeElem) {
-            const text = timeElem.getAttribute('aria-label') || timeElem.getAttribute('title') || timeElem.innerText;
-            if (index < 3) {
-              console.log(`[S4S] Post ${index + 1} fallback time text: "${text}"`);
-            }
-            
-            if (text && (text.match(/\d+[hmdw]/) || text.includes('ago') || text.includes('min') || text.includes('hour') || text.includes('day') || text.includes('week') || text.includes('month') || text.includes('year'))) {
-              let timeMatch = text.match(/(\d+)\s*(min|hour|day|week|month|year)s?/i);
-              if (!timeMatch) {
-                timeMatch = text.match(/(\d+[hmdw])/);
-              }
-              if (!timeMatch) {
-                timeMatch = text.match(/(\d+)\s*(?:minute|hour|day|week|month|year)s?/i);
-              }
-              
-              if (timeMatch) {
-                age = timeMatch[1] + (timeMatch[2] ? timeMatch[2].charAt(0) : '');
-                if (index < 3) {
-                  console.log(`[S4S] Post ${index + 1} fallback age extracted: "${age}" from "${text}"`);
-                }
-              }
-            }
-          }
-        }
+        // Extract date and age using enhanced function
+        const dateInfo = extractPostDateAndAge(post, index);
+        const extractedAge = dateInfo.age;
+        const postDate = dateInfo.postDate;
+        const exactDate = dateInfo.exactDate;
         
         if (index < 3) {
-          console.log(`[S4S] Post ${index + 1} final age: "${age}"`);
+          console.log(`[S4S] Post ${index + 1} extracted data:`, {
+            age: extractedAge,
+            postDate: postDate,
+            exactDate: exactDate
+          });
         }
         
         // Extract headline using the specific HTML structure provided
@@ -287,7 +218,16 @@ if (window.s4sContentScriptLoaded) {
         
         // Only add posts that have meaningful content
         if (name && (content || headline)) {
-          posts.push({ name, content, headline, linkedinUrl, age, postUrl });
+          posts.push({ 
+            name, 
+            content, 
+            headline, 
+            linkedinUrl, 
+            age: extractedAge, 
+            postDate, 
+            exactDate, 
+            postUrl 
+          });
         }
       }
       
@@ -370,10 +310,176 @@ if (window.s4sContentScriptLoaded) {
     }
   }
 
+  // Enhanced function to extract both age and actual date
+  function extractPostDateAndAge(post, index = 0) {
+    let age = '';
+    let postDate = null;
+    let postDateString = '';
+    
+    console.log(`[S4S] Starting date extraction for post ${index + 1}`);
+    
+    const timeSelectors = [
+      'time',
+      'span[class*="time"]',
+      'span[class*="ago"]',
+      '.feed-shared-actor__subline time',
+      '.feed-shared-actor__description time',
+      '.update-components-actor__sub-description span[aria-hidden="true"]',
+      'span[aria-hidden="true"]',
+      '.feed-shared-actor__subline span[aria-hidden="true"]',
+      '.update-components-actor__sub-description span[aria-hidden="true"]'
+    ];
+    
+    // First, try to get the actual timestamp from HTML attributes
+    for (const selector of timeSelectors) {
+      const timeElems = post.querySelectorAll(selector);
+      console.log(`[S4S] Post ${index + 1} found ${timeElems.length} elements with selector: ${selector}`);
+      
+      for (const timeElem of timeElems) {
+        // Check for datetime attribute (most reliable)
+        const datetime = timeElem.getAttribute('datetime');
+        if (datetime) {
+          console.log(`[S4S] Post ${index + 1} found datetime:`, datetime);
+          postDate = new Date(datetime);
+          postDateString = postDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+          console.log(`[S4S] Post ${index + 1} exact date from datetime:`, postDateString);
+          break;
+        }
+        
+        // Check for timestamp in data attributes
+        const timestamp = timeElem.getAttribute('data-timestamp') || 
+                         timeElem.getAttribute('data-time') ||
+                         timeElem.getAttribute('data-date');
+        if (timestamp) {
+          console.log(`[S4S] Post ${index + 1} found timestamp:`, timestamp);
+          postDate = new Date(parseInt(timestamp) * 1000); // Convert Unix timestamp
+          postDateString = postDate.toISOString().split('T')[0];
+          console.log(`[S4S] Post ${index + 1} exact date from timestamp:`, postDateString);
+          break;
+        }
+        
+        // Check for title attribute with full date
+        const title = timeElem.getAttribute('title');
+        if (title && title.includes(',')) {
+          console.log(`[S4S] Post ${index + 1} found title:`, title);
+          try {
+            postDate = new Date(title);
+            if (!isNaN(postDate)) {
+              postDateString = postDate.toISOString().split('T')[0];
+              console.log(`[S4S] Post ${index + 1} exact date from title:`, postDateString);
+              break;
+            }
+          } catch (e) {
+            console.log(`[S4S] Post ${index + 1} failed to parse title date:`, e);
+          }
+        }
+      }
+      if (postDate) break;
+    }
+    
+    // If we couldn't get exact date, extract age and calculate approximate date
+    if (!postDate) {
+      console.log(`[S4S] No exact date found, calculating from age for post ${index + 1}`);
+      
+      for (const selector of timeSelectors) {
+        const timeElems = post.querySelectorAll(selector);
+        for (const timeElem of timeElems) {
+          if (timeElem && timeElem.innerText.trim()) {
+            const text = timeElem.innerText.trim();
+            console.log(`[S4S] Post ${index + 1} time text: "${text}"`);
+            
+            // Extract age as before
+            if (text.match(/\d+[hmdw]/) || text.includes('ago') || text.includes('min') || text.includes('hour') || text.includes('day') || text.includes('week') || text.includes('month') || text.includes('year')) {
+              console.log(`[S4S] Post ${index + 1} text matches time pattern: "${text}"`);
+              
+              let timeMatch = text.match(/(\d+)\s*(min|minute|hour|day|week|month|year)s?/i);
+              if (!timeMatch) {
+                timeMatch = text.match(/(\d+[hmdw])/);
+              }
+              
+              console.log(`[S4S] Post ${index + 1} timeMatch:`, timeMatch);
+              
+              if (timeMatch) {
+                const value = parseInt(timeMatch[1]);
+                const unit = timeMatch[2] ? timeMatch[2].toLowerCase() : timeMatch[1].slice(-1);
+                
+                age = value + (timeMatch[2] ? timeMatch[2].charAt(0) : unit);
+                console.log(`[S4S] Post ${index + 1} extracted age: "${age}" (value: ${value}, unit: ${unit})`);
+                
+                // Calculate approximate date
+                const now = new Date();
+                switch (unit.charAt(0)) {
+                  case 'm':
+                    if (unit === 'min' || unit === 'minute') {
+                      postDate = new Date(now.getTime() - (value * 60 * 1000));
+                    } else { // month
+                      postDate = new Date(now.getTime() - (value * 30 * 24 * 60 * 60 * 1000));
+                    }
+                    break;
+                  case 'h':
+                    postDate = new Date(now.getTime() - (value * 60 * 60 * 1000));
+                    break;
+                  case 'd':
+                    postDate = new Date(now.getTime() - (value * 24 * 60 * 60 * 1000));
+                    break;
+                  case 'w':
+                    postDate = new Date(now.getTime() - (value * 7 * 24 * 60 * 60 * 1000));
+                    break;
+                  case 'y':
+                    postDate = new Date(now.getTime() - (value * 365 * 24 * 60 * 60 * 1000));
+                    break;
+                }
+                
+                if (postDate) {
+                  postDateString = postDate.toISOString().split('T')[0];
+                  console.log(`[S4S] Post ${index + 1} calculated date:`, postDateString, 'from age:', age);
+                }
+                break;
+              } else {
+                console.log(`[S4S] Post ${index + 1} no time match found for text: "${text}"`);
+              }
+            } else {
+              console.log(`[S4S] Post ${index + 1} text does not match time pattern: "${text}"`);
+            }
+          }
+        }
+        if (age) break;
+      }
+    }
+    
+    // If we have exact date but no age, calculate age from date
+    if (postDate && !age) {
+      const now = new Date();
+      const diffMs = now.getTime() - postDate.getTime();
+      const diffMinutes = Math.floor(diffMs / (1000 * 60));
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      
+      if (diffMinutes < 60) {
+        age = diffMinutes + 'm';
+      } else if (diffHours < 24) {
+        age = diffHours + 'h';
+      } else {
+        age = diffDays + 'd';
+      }
+    }
+    
+    const result = {
+      age: age,
+      postDate: postDateString,
+      exactDate: !!postDate // boolean indicating if we found exact date vs calculated
+    };
+    
+    console.log(`[S4S] Post ${index + 1} final result:`, result);
+    
+    return result;
+  }
 
 
 
 
+
+  // Improved post URL extraction function
   // Improved post URL extraction function
   function extractPostUrl(post, index = 0) {
     try {
@@ -386,11 +492,13 @@ if (window.s4sContentScriptLoaded) {
       
       // Method 1: Look for direct post links (most reliable)
       const directPostSelectors = [
-        'a[href*="/posts/"]',
         'a[href*="/feed/update/"]',
+        'a[href*="/posts/"]',
         'a[href*="/activity-"]',
         'a[data-control-name="post_link"]',
-        'a[data-control-name="feed_detail"]'
+        'a[data-control-name="feed_detail"]',
+        'a[data-control-name="post_click"]',
+        'a[data-control-name="feed_detail_click"]'
       ];
       
       for (const selector of directPostSelectors) {
@@ -406,7 +514,7 @@ if (window.s4sContentScriptLoaded) {
       
       // Method 2: Extract from timestamp/date links
       if (!postUrl) {
-        const timeLinks = post.querySelectorAll('time a, a[aria-label*="ago"], .update-components-actor__sub-description a');
+        const timeLinks = post.querySelectorAll('time a, a[aria-label*="ago"], .update-components-actor__sub-description a, a[data-control-name="timestamp"]');
         for (const timeLink of timeLinks) {
           if (timeLink.href && (timeLink.href.includes('/posts/') || timeLink.href.includes('/feed/update/'))) {
             postUrl = timeLink.href;
@@ -418,7 +526,31 @@ if (window.s4sContentScriptLoaded) {
         }
       }
       
-      // Method 3: Look for URN-based construction
+      // Method 3: Look for share/comment buttons that might have post URLs
+      if (!postUrl) {
+        const shareButtons = post.querySelectorAll('button[data-control-name="share"], button[data-control-name="comment"], a[data-control-name="share"], a[data-control-name="comment"]');
+        for (const button of shareButtons) {
+          const parent = button.closest('[data-urn]') || button.parentElement;
+          if (parent) {
+            const dataUrn = parent.getAttribute('data-urn');
+            if (dataUrn) {
+              // Try to construct URL from URN
+              const activityMatch = dataUrn.match(/urn:li:activity:(\d+)/);
+              if (activityMatch) {
+                const activityId = activityMatch[1];
+                // Use the working LinkedIn post URL format
+                postUrl = `https://www.linkedin.com/posts/activity-${activityId}`;
+                if (index < 3) {
+                  console.log(`[S4S] Post ${index + 1} URL constructed from share button URN:`, postUrl);
+                }
+                break;
+              }
+            }
+          }
+        }
+      }
+      
+      // Method 4: Look for URN-based construction with working URL format
       if (!postUrl) {
         const urnElement = post.querySelector('[data-urn]') || post;
         if (urnElement) {
@@ -446,7 +578,7 @@ if (window.s4sContentScriptLoaded) {
             }
             
             if (activityId) {
-              // LinkedIn's actual post URL format
+              // Use the working LinkedIn post URL format
               postUrl = `https://www.linkedin.com/posts/activity-${activityId}`;
               if (index < 3) {
                 console.log(`[S4S] Post ${index + 1} URL constructed from URN:`, postUrl);
@@ -456,7 +588,7 @@ if (window.s4sContentScriptLoaded) {
         }
       }
       
-      // Method 4: Try to find any clickable element that might lead to the post
+      // Method 5: Try to find any clickable element that might lead to the post
       if (!postUrl) {
         const clickableElements = post.querySelectorAll('[data-control-name*="post"], [data-control-name*="feed"], [data-control-name*="detail"]');
         for (const elem of clickableElements) {
@@ -472,7 +604,27 @@ if (window.s4sContentScriptLoaded) {
         }
       }
       
-      // Method 5: Look for author profile link and try to construct post URL
+      // Method 6: Look for any link that contains activity ID
+      if (!postUrl) {
+        const allLinks = post.querySelectorAll('a[href]');
+        for (const link of allLinks) {
+          const href = link.href;
+          if (href && href.includes('linkedin.com')) {
+            // Look for activity ID in the URL
+            const activityMatch = href.match(/activity-(\d+)/);
+            if (activityMatch) {
+              const activityId = activityMatch[1];
+              postUrl = `https://www.linkedin.com/posts/activity-${activityId}`;
+              if (index < 3) {
+                console.log(`[S4S] Post ${index + 1} URL constructed from activity ID in link:`, postUrl);
+              }
+              break;
+            }
+          }
+        }
+      }
+      
+      // Method 7: Look for author profile link and try to construct post URL
       if (!postUrl) {
         const authorLink = post.querySelector('a[href*="/in/"]');
         if (authorLink && authorLink.href) {
@@ -519,7 +671,7 @@ if (window.s4sContentScriptLoaded) {
     }
   }
   
-  // Enhanced URL cleaning function
+  // Enhanced URL cleaning function (UPDATED)
   function cleanAndValidatePostUrl(url) {
     try {
       // Remove any query parameters that might cause issues
@@ -530,17 +682,31 @@ if (window.s4sContentScriptLoaded) {
         return '';
       }
       
+      // Convert old format to new format if needed
+      if (cleanUrl.includes('/posts/activity-')) {
+        const activityIdMatch = cleanUrl.match(/\/posts\/activity-(\d+)/);
+        if (activityIdMatch) {
+          const activityId = activityIdMatch[1];
+          cleanUrl = `https://www.linkedin.com/feed/update/urn:li:activity:${activityId}/`;
+        }
+      }
+      
       // Valid LinkedIn post URL patterns
       const validPatterns = [
-        '/posts/',
         '/feed/update/',
+        '/posts/',
         '/activity-',
-        '/pulse/' // For articles
+        '/pulse/', // For articles
+        'urn:li:activity:' // For URN-based URLs
       ];
       
       const isValidPattern = validPatterns.some(pattern => cleanUrl.includes(pattern));
       
       if (isValidPattern) {
+        // Ensure proper format for feed/update URLs
+        if (cleanUrl.includes('/feed/update/') && !cleanUrl.endsWith('/')) {
+          cleanUrl += '/';
+        }
         return cleanUrl;
       }
       
