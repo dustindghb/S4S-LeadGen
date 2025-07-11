@@ -5,11 +5,12 @@
   <style>
     body { 
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-      width: 400px; 
       margin: 0; 
       padding: 0;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: #333;
+      min-width: 400px;
+      min-height: 500px;
     }
     .header {
       background: rgba(255, 255, 255, 0.95);
@@ -33,6 +34,8 @@
     .content {
       padding: 15px;
       background: white;
+      height: calc(100vh - 60px);
+      overflow-y: auto;
     }
     .controls, .scroll-controls {
       margin-bottom: 15px;
@@ -216,9 +219,10 @@ OUTPUT FORMAT - RETURN ONLY THIS JSON STRUCTURE:
   {
     "name": "exact name from post",
     "headline": "exact headline from post",
-    "linkedin_profile_url": "exact URL from post", 
+    "post_url": "exact post URL from post",
+    "linkedin_profile_url": "exact profile URL from post", 
     "age": "exact age from post",
-    "message": "exact message from post",
+    "post_content": "exact post content from post",
     "hiring_reason": "keyword found: [specific keyword]"
   }
 ]

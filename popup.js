@@ -32,6 +32,25 @@ RULES:
 LinkedIn Posts Data:
 {data}`;
 
+// Helper to get the most recently active LinkedIn tab
+async function getMostRecentLinkedInTab() {
+  return new Promise((resolve) => {
+    chrome.tabs.query({ url: '*://www.linkedin.com/*' }, (tabs) => {
+      if (tabs && tabs.length > 0) {
+        let targetTab = tabs[0];
+        for (const tab of tabs) {
+          if (!targetTab.lastAccessed || (tab.lastAccessed && tab.lastAccessed > targetTab.lastAccessed)) {
+            targetTab = tab;
+          }
+        }
+        resolve(targetTab);
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+
 // Function to ensure content script is injected
 async function ensureContentScriptInjected() {
     try {
@@ -41,7 +60,7 @@ async function ensureContentScriptInjected() {
       });
       
       if (response && response.success) {
-        return true;
+        return response.tabId;
       }
     } catch (error) {
       // Background injection failed, trying direct injection
@@ -49,19 +68,19 @@ async function ensureContentScriptInjected() {
     
     // Fallback: try direct injection
     try {
-      let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab.url && tab.url.includes('linkedin.com')) {
+      const tab = await getMostRecentLinkedInTab();
+      if (tab && tab.url && tab.url.includes('linkedin.com')) {
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
           files: ['content.js']
         });
-        return true;
+        return tab.id;
       }
     } catch (error) {
-      return false;
+      return null;
     }
     
-    return false;
+    return null;
   }
   
   // Function to send message to content script with timeout
@@ -97,10 +116,28 @@ async function ensureContentScriptInjected() {
     return posts.map(post => ({
       name: post.name || 'Unknown',
       headline: post.headline || '',
+      post_url: post.postUrl || '',
       linkedin_profile_url: post.linkedinUrl || '',
       age: post.age || '',
-      message: post.content || ''
+      post_content: post.content || ''
     }));
+  }
+  
+  // Function to safely stringify JSON with proper encoding
+  function safeJSONStringify(obj) {
+    try {
+      return JSON.stringify(obj, null, 2);
+    } catch (error) {
+      console.error('[S4S] Error stringifying JSON:', error);
+      // Fallback: try to stringify with replacer function
+      return JSON.stringify(obj, (key, value) => {
+        if (typeof value === 'string') {
+          // Ensure proper UTF-8 encoding
+          return value;
+        }
+        return value;
+      }, 2);
+    }
   }
   
   // Function to download JSON file
@@ -122,7 +159,7 @@ async function ensureContentScriptInjected() {
   function displayJSONData(posts) {
     const resultsDiv = document.getElementById('results');
     const jsonData = organizeDataForJSON(posts);
-    const jsonString = JSON.stringify(jsonData, null, 2);
+    const jsonString = safeJSONStringify(jsonData);
     
     resultsDiv.innerHTML = `<div class="json-display">${jsonString}</div>`;
   }
@@ -144,41 +181,52 @@ async function ensureContentScriptInjected() {
     });
   }
 
-  // Function to check if Ollama is running and get the port
-  async function checkOllamaPort() {
+  // Function to test Ollama connection and available models
+  async function testOllamaConnection() {
     try {
-      const response = await sendMessageToBackground({
+      console.log('[S4S] Testing Ollama connection...');
+      
+      // Test basic connection
+      const pingResponse = await sendMessageToBackground({
         action: 'ollamaRequest',
         endpoint: '/api/tags',
         method: 'GET'
-      }, 5000);
+      });
       
-      if (response && response.success) {
-        console.log('Ollama found and responding');
-        return true;
+      if (!pingResponse || !pingResponse.success) {
+        throw new Error('Failed to connect to Ollama');
       }
+      
+      console.log('[S4S] Ollama connection successful');
+      
+      // Check available models
+      const models = pingResponse.data?.models || [];
+      console.log('[S4S] Available models:', models.map(m => m.name));
+      
+      // Check if our preferred models are available
+      const availableModels = models.map(m => m.name);
+      const hasGemma3 = availableModels.some(m => m.includes('gemma3'));
+      
+      console.log('[S4S] Model availability - gemma3:', hasGemma3);
+      
+      return { success: true, models: availableModels, hasGemma3 };
     } catch (error) {
-      console.log('Ollama not available:', error.message);
+      console.error('[S4S] Ollama connection test failed:', error);
+      return { success: false, error: error.message };
     }
-    
-    throw new Error('Ollama not found on port 11435. Make sure Ollama is running and a model is loaded.');
   }
 
   // Function to check if a single post is about hiring
   async function checkIfPostIsHiring(post) {
+    // Simplified prompt with only essential information
     const hiringPrompt = `SYSTEM: You are a hiring post classifier. Return ONLY "YES" or "NO".
 
 TASK: Determine if this LinkedIn post is about hiring, recruiting, job opportunities, or employment.
 
-HIRING KEYWORDS TO LOOK FOR:
-- "hiring", "we're hiring", "looking to hire", "hiring for"
-- "recruiting", "recruiter", "recruitment"
-- "job opportunity", "open position", "job opening", "position available"
-- "join our team", "we're looking for", "apply now", "apply today"
-- "career opportunity", "employment", "job posting"
+HIRING KEYWORDS: hiring, recruiting, job opportunity, open position, join our team, apply now, career opportunity, employment
 
-POST TO ANALYZE:
-${JSON.stringify(post, null, 2)}
+POST CONTENT: ${post.content || post.message || ''}
+POST HEADLINE: ${post.headline || ''}
 
 RESPONSE: Return ONLY "YES" or "NO"`;
 
@@ -187,9 +235,13 @@ RESPONSE: Return ONLY "YES" or "NO"`;
       endpoint: '/api/generate',
       method: 'POST',
       body: {
-        model: 'gemma3:12b',
+        model: 'gemma3:12b', // Use the correct model name
         prompt: hiringPrompt,
-        stream: false
+        stream: false,
+        options: {
+          temperature: 0.1, // Lower temperature for more consistent results
+          num_predict: 10   // Limit response length
+        }
       }
     });
     
@@ -199,6 +251,51 @@ RESPONSE: Return ONLY "YES" or "NO"`;
     
     const result = response.data.response.trim().toUpperCase();
     return result === 'YES';
+  }
+
+  // Function to batch analyze posts for better performance
+  async function batchAnalyzePosts(posts, batchSize = 5) {
+    const results = [];
+    console.log('[S4S] Starting batch analysis of', posts.length, 'posts with batch size', batchSize);
+    
+    for (let i = 0; i < posts.length; i += batchSize) {
+      const batch = posts.slice(i, i + batchSize);
+      console.log(`[S4S] Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(posts.length/batchSize)} (posts ${i+1}-${Math.min(i+batchSize, posts.length)})`);
+      
+      const batchPromises = batch.map(async (post, index) => {
+        try {
+          console.log(`[S4S] Analyzing post ${i + index + 1}: ${post.name || 'Unknown'}`);
+          const isHiring = await checkIfPostIsHiring(post);
+          console.log(`[S4S] Post ${i + index + 1} result:`, isHiring ? 'HIRING' : 'NOT HIRING');
+          return { post, isHiring, index: i + index };
+        } catch (error) {
+          console.error(`[S4S] Error analyzing post ${i + index + 1}:`, error);
+          return { post, isHiring: false, index: i + index, error: error.message };
+        }
+      });
+      
+      try {
+        // Process batch with delay
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults);
+        console.log(`[S4S] Batch ${Math.floor(i/batchSize) + 1} completed successfully`);
+        
+        // Add delay between batches
+        if (i + batchSize < posts.length) {
+          console.log('[S4S] Waiting 200ms before next batch...');
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      } catch (error) {
+        console.error(`[S4S] Error processing batch ${Math.floor(i/batchSize) + 1}:`, error);
+        // Add failed results to continue processing
+        batch.forEach((post, index) => {
+          results.push({ post, isHiring: false, index: i + index, error: 'Batch processing failed' });
+        });
+      }
+    }
+    
+    console.log('[S4S] Batch analysis completed. Total results:', results.length);
+    return results;
   }
 
   // Function to filter posts for hiring content
@@ -247,7 +344,7 @@ RESPONSE: Return ONLY "YES" or "NO"`;
     
     console.log('Final prompt length:', finalPrompt.length);
     console.log('Prompt preview:', finalPrompt.substring(0, 1000) + '...');
-    console.log('JSON data included:', finalPrompt.includes('"name"') && finalPrompt.includes('"message"'));
+    console.log('JSON data included:', finalPrompt.includes('"name"') && finalPrompt.includes('"post_content"'));
     
     const response = await sendMessageToBackground({
       action: 'ollamaRequest',
@@ -334,7 +431,14 @@ RESPONSE: Return ONLY "YES" or "NO"`;
 
     startBtn.addEventListener('click', async () => {
       try {
-        let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tab = await getMostRecentLinkedInTab();
+        if (!tab) {
+          statusDiv.textContent = 'No LinkedIn tab found. Please open a LinkedIn page.';
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
+          return;
+        }
+        const tabId = tab.id;
         startBtn.disabled = true;
         stopBtn.disabled = false;
         statusDiv.textContent = 'Preparing to scroll...';
@@ -349,7 +453,7 @@ RESPONSE: Return ONLY "YES" or "NO"`;
         }
 
         // Test if content script is responsive
-        const isResponsive = await testContentScript(tab.id);
+        const isResponsive = await testContentScript(tabId);
         if (!isResponsive) {
           statusDiv.textContent = 'Error: Content script not responsive. Please refresh the LinkedIn page.';
           startBtn.disabled = false;
@@ -358,7 +462,7 @@ RESPONSE: Return ONLY "YES" or "NO"`;
         }
 
         statusDiv.textContent = 'Starting scroll...';
-        await sendMessage(tab.id, { action: "performSingleScroll" }, 30000);
+        await sendMessage(tabId, { action: "performSingleScroll" }, 30000);
         // Remove: statusDiv.textContent = 'Scroll completed.';
         startBtn.disabled = false;
         stopBtn.disabled = true;
@@ -375,8 +479,13 @@ RESPONSE: Return ONLY "YES" or "NO"`;
         stopBtn.disabled = true;
         statusDiv.textContent = 'Stopping scroll...';
 
-        let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        await sendMessage(tab.id, { action: "stopScroll" }, 5000);
+        const tab = await getMostRecentLinkedInTab();
+        if (!tab) {
+          statusDiv.textContent = 'No LinkedIn tab found. Please open a LinkedIn page.';
+          return;
+        }
+        const tabId = tab.id;
+        await sendMessage(tabId, { action: "stopScroll" }, 5000);
         statusDiv.textContent = 'Scrolling stopped. Extracting posts...';
 
         // Automatically extract posts after stopping scroll
@@ -385,12 +494,12 @@ RESPONSE: Return ONLY "YES" or "NO"`;
           statusDiv.textContent = 'Error: Could not inject content script. Please refresh the LinkedIn page.';
           return;
         }
-        const isResponsive = await testContentScript(tab.id);
+        const isResponsive = await testContentScript(tabId);
         if (!isResponsive) {
           statusDiv.textContent = 'Error: Content script not responsive. Please refresh the LinkedIn page.';
           return;
         }
-        const response = await sendMessage(tab.id, { action: "extractPosts" });
+        const response = await sendMessage(tabId, { action: "extractPosts" });
         if (response && response.posts) {
           extractedPosts = response.posts;
           statusDiv.textContent = `Found ${response.posts.length} posts after scrolling.`;
@@ -406,7 +515,12 @@ RESPONSE: Return ONLY "YES" or "NO"`;
     // Create and wire up buttons using components
     const extractBtn = window.createExtractButton(controlsDiv, async () => {
       try {
-        let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tab = await getMostRecentLinkedInTab();
+        if (!tab) {
+          statusDiv.textContent = 'No LinkedIn tab found. Please open a LinkedIn page.';
+          return;
+        }
+        const tabId = tab.id;
         statusDiv.textContent = 'Ensuring content script is loaded...';
         resultsDiv.innerHTML = '';
         // Ensure content script is injected
@@ -416,13 +530,13 @@ RESPONSE: Return ONLY "YES" or "NO"`;
           return;
         }
         // Test if content script is responsive
-        const isResponsive = await testContentScript(tab.id);
+        const isResponsive = await testContentScript(tabId);
         if (!isResponsive) {
           statusDiv.textContent = 'Error: Content script not responsive. Please refresh the LinkedIn page.';
           return;
         }
         statusDiv.textContent = 'Extracting posts...';
-        const response = await sendMessage(tab.id, { action: "extractPosts" });
+        const response = await sendMessage(tabId, { action: "extractPosts" });
         if (response && response.posts) {
           extractedPosts = response.posts;
           statusDiv.textContent = `Found ${response.posts.length} posts`;
@@ -446,115 +560,49 @@ RESPONSE: Return ONLY "YES" or "NO"`;
         return;
       }
       findLeadsBtn.disabled = true;
-      findLeadsBtn.textContent = 'Generating Response...';
-      statusDiv.textContent = 'Analyzing posts for hiring content...';
+      findLeadsBtn.textContent = 'Testing Ollama...';
+      statusDiv.textContent = 'Testing Ollama connection...';
       resultsDiv.innerHTML = '';
+      
       try {
-        const hiringPosts = [];
-        let processed = 0;
-        for (const post of extractedPosts) {
-          processed++;
-          statusDiv.textContent = `Analyzed ${processed}/${extractedPosts.length} posts...`;
-          try {
-            const isHiring = await checkIfPostIsHiring(post);
-            if (isHiring) {
-              hiringPosts.push(post);
-            }
-          } catch (error) {
-            // Continue with next post even if one fails
-          }
+        // Test Ollama connection first
+        const connectionTest = await testOllamaConnection();
+        if (!connectionTest.success) {
+          throw new Error(`Ollama connection failed: ${connectionTest.error}`);
         }
+        
+        findLeadsBtn.textContent = 'Analyzing...';
+        statusDiv.textContent = `Ollama connected successfully. Available models: ${connectionTest.models.join(', ')}`;
+        
+        const totalPosts = extractedPosts.length;
+        
+        // Use batch processing for better performance
+        const batchSize = Math.min(5, Math.ceil(totalPosts / 10)); // Adaptive batch size
+        statusDiv.textContent = `Starting batch analysis of ${totalPosts} posts (batch size: ${batchSize})...`;
+        
+        const analysisResults = await batchAnalyzePosts(extractedPosts, batchSize);
+        
+        // Filter hiring posts
+        const hiringPosts = analysisResults
+          .filter(result => result.isHiring)
+          .map(result => result.post);
+        
         await saveLeadsToStorage(hiringPosts, statusDiv);
         statusDiv.textContent = `Found ${hiringPosts.length} hiring-related posts!`;
         const jsonString = JSON.stringify(hiringPosts, null, 2);
-        resultsDiv.innerHTML = `<div class=\"json-display\">${jsonString}</div>`;
+        resultsDiv.innerHTML = `<div class="json-display">${jsonString}</div>`;
         if (hiringPosts.length > 0) {
           exportLeadsToCSV(hiringPosts);
         }
       } catch (error) {
+        console.error('[S4S] Analysis failed:', error);
         statusDiv.textContent = `Error: ${error.message}`;
-        resultsDiv.innerHTML = `<div style=\"color: red; padding: 10px;\">Failed to analyze leads: ${error.message}</div>`;
+        resultsDiv.innerHTML = `<div style="color: red; padding: 10px;">Failed to analyze leads: ${error.message}</div>`;
       } finally {
         findLeadsBtn.disabled = false;
         findLeadsBtn.textContent = 'Find Leads';
       }
     });
-  });
-
-  // Add event listener for Test Ollama button
-  document.getElementById('testOllama').addEventListener('click', async () => {
-    try {
-      const statusDiv = document.getElementById('status');
-      const resultsDiv = document.getElementById('results');
-      
-      statusDiv.textContent = 'Testing background script...';
-      resultsDiv.innerHTML = '';
-      
-      // First test if background script is working
-      try {
-        const pingResponse = await sendMessageToBackground({ action: 'ping' });
-        console.log('Ping response:', pingResponse);
-        statusDiv.textContent = 'Background script working, testing Ollama...';
-      } catch (error) {
-        statusDiv.textContent = '❌ Background script not responding';
-        resultsDiv.innerHTML = `<div style="color: red; padding: 10px;">Background script error: ${error.message}</div>`;
-        return;
-      }
-      
-      try {
-        await checkOllamaPort();
-        statusDiv.textContent = '✅ Ollama connection successful!';
-        resultsDiv.innerHTML = '<div style="color: green; padding: 10px;">Ollama is running and responding on port 11435</div>';
-        
-        // Test if we can actually generate a response
-        statusDiv.textContent = 'Testing model generation (this may take a while)...';
-        
-        // First, let's get the available models
-        const modelsResponse = await sendMessageToBackground({
-          action: 'ollamaRequest',
-          endpoint: '/api/tags',
-          method: 'GET'
-        });
-        
-        console.log('Available models:', modelsResponse);
-        
-        if (modelsResponse && modelsResponse.success && modelsResponse.data && modelsResponse.data.models) {
-          const availableModels = modelsResponse.data.models;
-          console.log('Available models:', availableModels);
-          
-          // Use the first available model for testing
-          const testModel = availableModels[0]?.name || 'gemma3:12b';
-          statusDiv.textContent = `Testing model generation with ${testModel} (this may take 30-60 seconds)...`;
-          
-          const testResponse = await sendMessageToBackground({
-            action: 'ollamaRequest',
-            endpoint: '/api/generate',
-            method: 'POST',
-            body: {
-              model: testModel,
-              prompt: 'Hello, this is a test.',
-              stream: false
-            }
-          });
-          
-          if (testResponse && testResponse.success) {
-            statusDiv.textContent = '✅ Ollama connection and model generation successful!';
-            resultsDiv.innerHTML = `<div style="color: green; padding: 10px;">Ollama is working perfectly! Model "${testModel}" can generate responses.</div>`;
-          } else {
-            statusDiv.textContent = '⚠️ Ollama connected but model generation failed';
-            resultsDiv.innerHTML = `<div style="color: orange; padding: 10px;">Connection works but model generation failed: ${testResponse?.error || 'Unknown error'}</div>`;
-          }
-        } else {
-          statusDiv.textContent = '⚠️ Could not get available models';
-          resultsDiv.innerHTML = `<div style="color: orange; padding: 10px;">Connected to Ollama but could not retrieve model list.</div>`;
-        }
-      } catch (error) {
-        statusDiv.textContent = '❌ Ollama connection failed';
-        resultsDiv.innerHTML = `<div style="color: red; padding: 10px;">Failed to connect to Ollama: ${error.message}</div>`;
-      }
-    } catch (error) {
-      document.getElementById('status').textContent = 'Error: ' + error.message;
-    }
   });
 
   // Remove Excel export logic and add CSV export logic
@@ -563,30 +611,41 @@ RESPONSE: Return ONLY "YES" or "NO"`;
       alert('No leads to export!');
       return;
     }
-    // Only these columns: name, headline, profileurl, age, message
+    // Updated columns to include post URL
     const headerKeys = [
       'name',
       'headline',
+      'posturl',
       'profileurl',
       'age',
-      'message'
+      'post_content'
     ];
-    const header = ['Name', 'Headline', 'Profile URL', 'Age', 'Message'];
+    const header = ['Name', 'Headline', 'Post URL', 'Profile URL', 'Age', 'Post Content'];
     function escapeCSVField(field) {
       if (field === null || field === undefined) return '';
       const str = String(field);
-      if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
-        return '"' + str.replace(/"/g, '""') + '"';
+      
+      // Handle emojis and special characters
+      let cleanedStr = str
+        .replace(/\r\n/g, ' ') // Replace newlines with spaces for CSV
+        .replace(/\r/g, ' ')
+        .replace(/\n/g, ' ')
+        .replace(/\s{2,}/g, ' ') // Remove multiple spaces
+        .trim();
+      
+      if (cleanedStr.includes(',') || cleanedStr.includes('"') || cleanedStr.includes('\n') || cleanedStr.includes('\r')) {
+        return '"' + cleanedStr.replace(/"/g, '""') + '"';
       }
-      return str;
+      return cleanedStr;
     }
-    // Map each lead to the correct keys, with fallback for profileurl and message
+    // Map each lead to the correct keys, with fallback for profileurl, post_content, and posturl
     const rows = leads.map(lead => [
       escapeCSVField(lead.name || ''),
       escapeCSVField(lead.headline || ''),
+      escapeCSVField(lead.posturl || lead.postUrl || ''),
       escapeCSVField(lead.profileurl || lead.linkedin_profile_url || lead.linkedinUrl || ''),
       escapeCSVField(lead.age || ''),
-      escapeCSVField(lead.message || lead.content || '')
+      escapeCSVField(lead.post_content || lead.content || '')
     ]);
     const csvContent = [header, ...rows].map(e => e.join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv' });

@@ -12,7 +12,7 @@
       "service_worker": "background.js"
     },
     "action": {
-      "default_popup": "popup.html"
+      "default_title": "S4S LinkedIn Tool"
     },
     "content_scripts": [
       {

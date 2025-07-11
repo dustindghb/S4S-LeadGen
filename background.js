@@ -1,24 +1,39 @@
 // Background script - simplified
 chrome.action.onClicked.addListener((tab) => {
-  // Extension icon clicked
+  // Extension icon clicked - open popup in detachable window
+  chrome.windows.create({
+    url: 'popup.html',
+    type: 'popup',
+    width: 450,
+    height: 600,
+    focused: true
+  });
 });
 
 // Handle messages from popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background script received message:', message);
   if (message.action === 'injectContentScript') {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0] && tabs[0].url && tabs[0].url.includes('linkedin.com')) {
+    // Find the most recently active LinkedIn tab in any window
+    chrome.tabs.query({ url: '*://www.linkedin.com/*' }, (tabs) => {
+      if (tabs && tabs.length > 0) {
+        // Pick the most recently active tab
+        let targetTab = tabs[0];
+        for (const tab of tabs) {
+          if (!targetTab.lastAccessed || (tab.lastAccessed && tab.lastAccessed > targetTab.lastAccessed)) {
+            targetTab = tab;
+          }
+        }
         chrome.scripting.executeScript({
-          target: { tabId: tabs[0].id },
+          target: { tabId: targetTab.id },
           files: ['content.js']
         }).then(() => {
-          sendResponse({ success: true });
+          sendResponse({ success: true, tabId: targetTab.id });
         }).catch(err => {
           sendResponse({ success: false, error: err.message });
         });
       } else {
-        sendResponse({ success: false, error: 'Not on LinkedIn page' });
+        sendResponse({ success: false, error: 'No LinkedIn tab found. Please open a LinkedIn page.' });
       }
     });
     return true; // Keep the message channel open for async response

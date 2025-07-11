@@ -21,7 +21,7 @@ window.exportLeadsToCSV = function(leads) {
   }
   
   // Create CSV content
-  const headers = ['Name', 'Headline', 'LinkedIn Profile URL', 'Age', 'Message'];
+  const headers = ['Name', 'Headline', 'Post URL', 'LinkedIn Profile URL', 'Age', 'Post Content'];
   const csvRows = [];
   
   // Add headers
@@ -32,9 +32,10 @@ window.exportLeadsToCSV = function(leads) {
     const row = [
       lead.name || '',
       lead.headline || '',
+      lead.postUrl || lead.post_url || '',
       lead.linkedinUrl || lead.linkedin_profile_url || '',
       lead.age || '',
-      lead.content || lead.message || ''
+      lead.content || lead.post_content || ''
     ];
     csvRows.push(row.map(escapeCSVField).join(','));
   });
