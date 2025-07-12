@@ -115,7 +115,8 @@ async function ensureContentScriptInjected() {
   function organizeDataForJSON(posts) {
     return posts.map(post => ({
       name: post.name || 'Unknown',
-      headline: post.headline || '',
+      title: post.title || 'Unknown Title',
+      company: post.company || 'Unknown Company',
       connection_degree: post.connectionDegree || '3rd',
       post_url: post.postUrl || '',
       linkedin_profile_url: post.linkedinUrl || '',
@@ -253,6 +254,122 @@ RESPONSE: Return ONLY "YES" or "NO"`;
     
     const result = response.data.response.trim().toUpperCase();
     return result === 'YES';
+  }
+
+  // Function to extract title and company from a post's headline
+  async function extractTitleAndCompany(post) {
+    console.log(`[S4S] Extracting title/company for post:`, {
+      name: post.name,
+      headline: post.headline,
+      content: post.content?.substring(0, 100) + '...'
+    });
+    
+    // If no headline, try to extract from content or use a fallback
+    let headlineText = post.headline || '';
+    if (!headlineText && post.content) {
+      // Try to extract a potential headline from the first few lines of content
+      const firstLine = post.content.split('\n')[0];
+      if (firstLine && firstLine.length > 10 && firstLine.length < 100) {
+        headlineText = firstLine;
+        console.log(`[S4S] Using first line of content as headline: "${headlineText}"`);
+      }
+    }
+    
+    if (!headlineText) {
+      console.log(`[S4S] No headline found for post "${post.name}", using fallback`);
+      return {
+        title: 'Unknown Title',
+        company: 'Unknown Company'
+      };
+    }
+    
+    const titleCompanyPrompt = `SYSTEM: You are a professional information extractor. Return ONLY valid JSON.
+
+TASK: Extract the job title and company name from the LinkedIn headline.
+
+HEADLINE: ${headlineText}
+
+OUTPUT FORMAT - RETURN ONLY THIS JSON:
+{
+  "title": "exact job title or 'Unknown Title' if not found",
+  "company": "exact company name or 'Unknown Company' if not found"
+}
+
+RULES:
+1. Return ONLY the JSON object above
+2. No text before or after the JSON
+3. If title/company cannot be determined, use "Unknown Title"/"Unknown Company"
+4. Copy exact values from the headline
+5. Separate title and company if they are combined (e.g., "Software Engineer at Google" -> title: "Software Engineer", company: "Google")
+6. Handle various formats: "Title at Company", "Title, Company", "Title • Company", etc.
+
+EXAMPLES:
+- "Software Engineer at Google" -> {"title": "Software Engineer", "company": "Google"}
+- "Marketing Manager, Apple Inc." -> {"title": "Marketing Manager", "company": "Apple Inc."}
+- "CEO • Startup" -> {"title": "CEO", "company": "Startup"}
+- "Just a title" -> {"title": "Just a title", "company": "Unknown Company"}
+
+RESPONSE:`;
+
+    console.log(`[S4S] Sending prompt to Ollama:`, titleCompanyPrompt);
+
+    const response = await sendMessageToBackground({
+      action: 'ollamaRequest',
+      endpoint: '/api/generate',
+      method: 'POST',
+      body: {
+        model: 'gemma3:12b',
+        prompt: titleCompanyPrompt,
+        stream: false,
+        options: {
+          temperature: 0.1,
+          num_predict: 150
+        }
+      }
+    });
+    
+    if (!response || !response.success) {
+      console.error(`[S4S] Ollama request failed:`, response);
+      throw new Error(response?.error || 'Failed to get response from Ollama');
+    }
+    
+    console.log(`[S4S] Ollama response:`, response.data.response);
+    
+    try {
+      const result = JSON.parse(response.data.response.trim());
+      console.log(`[S4S] Parsed result:`, result);
+      return {
+        title: result.title || 'Unknown Title',
+        company: result.company || 'Unknown Company'
+      };
+    } catch (error) {
+      console.error('[S4S] Error parsing title/company response:', error);
+      console.error('[S4S] Raw response was:', response.data.response);
+      
+      // Try to extract manually if JSON parsing fails
+      const responseText = response.data.response.trim();
+      if (responseText.includes('"title"') && responseText.includes('"company"')) {
+        try {
+          // Try to find JSON-like structure in the response
+          const titleMatch = responseText.match(/"title"\s*:\s*"([^"]+)"/);
+          const companyMatch = responseText.match(/"company"\s*:\s*"([^"]+)"/);
+          
+          if (titleMatch && companyMatch) {
+            return {
+              title: titleMatch[1] || 'Unknown Title',
+              company: companyMatch[1] || 'Unknown Company'
+            };
+          }
+        } catch (manualError) {
+          console.error('[S4S] Manual extraction also failed:', manualError);
+        }
+      }
+      
+      return {
+        title: 'Unknown Title',
+        company: 'Unknown Company'
+      };
+    }
   }
 
   // Function to batch analyze posts for better performance
@@ -578,10 +695,9 @@ RESPONSE: Return ONLY "YES" or "NO"`;
         
         const totalPosts = extractedPosts.length;
         
-        // Use batch processing for better performance
-        const batchSize = Math.min(5, Math.ceil(totalPosts / 10)); // Adaptive batch size
-        statusDiv.textContent = `Starting batch analysis of ${totalPosts} posts (batch size: ${batchSize})...`;
-        
+        // Step 1: Filter for hiring posts using YES/NO analysis
+        statusDiv.textContent = `Step 1: Analyzing ${totalPosts} posts for hiring content...`;
+        const batchSize = Math.min(5, Math.ceil(totalPosts / 10));
         const analysisResults = await batchAnalyzePosts(extractedPosts, batchSize);
         
         // Filter hiring posts
@@ -589,12 +705,59 @@ RESPONSE: Return ONLY "YES" or "NO"`;
           .filter(result => result.isHiring)
           .map(result => result.post);
         
-        await saveLeadsToStorage(hiringPosts, statusDiv);
-        statusDiv.textContent = `Found ${hiringPosts.length} hiring-related posts!`;
-        const jsonString = JSON.stringify(hiringPosts, null, 2);
+        console.log(`[S4S] Found ${hiringPosts.length} hiring posts`);
+        
+        if (hiringPosts.length === 0) {
+          statusDiv.textContent = 'No hiring posts found.';
+          resultsDiv.innerHTML = '<div style="color: orange; padding: 10px;">No hiring-related posts found in the extracted data.</div>';
+          return;
+        }
+        
+        // Step 2: Extract title and company from hiring posts
+        statusDiv.textContent = `Step 2: Extracting title/company from ${hiringPosts.length} hiring posts...`;
+        
+        console.log(`[S4S] Hiring posts data:`, hiringPosts.map(post => ({
+          name: post.name,
+          headline: post.headline,
+          content: post.content?.substring(0, 50) + '...'
+        })));
+        
+        const enrichedPosts = [];
+        for (let i = 0; i < hiringPosts.length; i++) {
+          const post = hiringPosts[i];
+          statusDiv.textContent = `Extracting title/company from post ${i + 1}/${hiringPosts.length}...`;
+          
+          console.log(`[S4S] Processing post ${i + 1}:`, {
+            name: post.name,
+            headline: post.headline,
+            hasHeadline: !!post.headline,
+            headlineLength: post.headline?.length || 0
+          });
+          
+          try {
+            const titleCompanyData = await extractTitleAndCompany(post);
+            enrichedPosts.push({
+              ...post,
+              title: titleCompanyData.title,
+              company: titleCompanyData.company
+            });
+          } catch (error) {
+            console.error(`[S4S] Error extracting title/company from post ${i + 1}:`, error);
+            // Add post with fallback values
+            enrichedPosts.push({
+              ...post,
+              title: 'Unknown Title',
+              company: 'Unknown Company'
+            });
+          }
+        }
+        
+        await saveLeadsToStorage(enrichedPosts, statusDiv);
+        statusDiv.textContent = `Found ${enrichedPosts.length} hiring-related posts with title/company data!`;
+        const jsonString = JSON.stringify(enrichedPosts, null, 2);
         resultsDiv.innerHTML = `<div class="json-display">${jsonString}</div>`;
-        if (hiringPosts.length > 0) {
-          exportLeadsToCSV(hiringPosts);
+        if (enrichedPosts.length > 0) {
+          exportLeadsToCSV(enrichedPosts);
         }
       } catch (error) {
         console.error('[S4S] Analysis failed:', error);
@@ -613,17 +776,18 @@ RESPONSE: Return ONLY "YES" or "NO"`;
       alert('No leads to export!');
       return;
     }
-    // Updated columns to include connection degree, post URL and post date
+    // Updated columns to include title, company, connection degree, post URL and post date
     const headerKeys = [
       'name',
-      'headline',
+      'title',
+      'company',
       'connection_degree',
       'posturl',
       'profileurl',
       'post_date',
       'post_content'
     ];
-    const header = ['Name', 'Headline', 'Connection Degree', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
+    const header = ['Name', 'Title', 'Company', 'Connection Degree', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
     function escapeCSVField(field) {
       if (field === null || field === undefined) return '';
       const str = String(field);
@@ -644,7 +808,8 @@ RESPONSE: Return ONLY "YES" or "NO"`;
     // Map each lead to the correct keys, with fallback for profileurl, post_content, and posturl
     const rows = leads.map(lead => [
       escapeCSVField(lead.name || ''),
-      escapeCSVField(lead.headline || ''),
+      escapeCSVField(lead.title || 'Unknown Title'),
+      escapeCSVField(lead.company || 'Unknown Company'),
       escapeCSVField(lead.connection_degree || lead.connectionDegree || '3rd'),
       escapeCSVField(lead.posturl || lead.postUrl || ''),
       escapeCSVField(lead.profileurl || lead.linkedin_profile_url || lead.linkedinUrl || ''),

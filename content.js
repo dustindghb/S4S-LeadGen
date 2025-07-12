@@ -118,10 +118,13 @@ if (window.s4sContentScriptLoaded) {
         // Also check for connection degree in headline elements
         let foundConnectionDegree = '';
         
+        console.log(`[S4S] Post ${index + 1} headline extraction - name: "${name}"`);
+        
         for (const selector of headlineSelectors) {
           const headlineElem = post.querySelector(selector);
           if (headlineElem && headlineElem.innerText.trim()) {
             const text = headlineElem.innerText.trim();
+            console.log(`[S4S] Post ${index + 1} found headline candidate: "${text}" using selector: ${selector}`);
             
             // Check for connection degree in this text
             if (!foundConnectionDegree) {
@@ -132,30 +135,23 @@ if (window.s4sContentScriptLoaded) {
               }
             }
             
+            // Less restrictive filtering - just check if it's not the name and has reasonable length
             if (text && 
                 text !== name && 
-                text.length > 3 && 
-                !text.includes('Follow') && 
-                !text.includes('Connect') && 
-                !text.includes('•') && 
-                !text.includes('1st') && 
-                !text.includes('2nd') && 
-                !text.includes('3rd+') &&
-                !text.includes('connection') &&
-                !text.includes('mutual') &&
-                !text.includes('ago') &&
-                !text.includes('min') &&
-                !text.includes('hour') &&
-                !text.includes('day') &&
-                !text.includes('week')) {
+                text.length > 2 && 
+                text.length < 200) {
               headline = text;
+              console.log(`[S4S] Post ${index + 1} selected headline: "${headline}"`);
               break;
+            } else {
+              console.log(`[S4S] Post ${index + 1} rejected headline candidate: "${text}" (reason: ${text === name ? 'same as name' : text.length <= 2 ? 'too short' : 'too long'})`);
             }
           }
         }
         
         // Fallback headline extraction
         if (!headline) {
+          console.log(`[S4S] Post ${index + 1} trying fallback headline extraction`);
           const fallbackSelectors = [
             '.update-components-actor__description',
             '.feed-shared-actor__subline',
@@ -168,23 +164,14 @@ if (window.s4sContentScriptLoaded) {
             const headlineElem = post.querySelector(selector);
             if (headlineElem && headlineElem.innerText.trim()) {
               const text = headlineElem.innerText.trim();
+              console.log(`[S4S] Post ${index + 1} fallback headline candidate: "${text}" using selector: ${selector}`);
+              
               if (text && 
                   text !== name && 
-                  text.length > 3 && 
-                  !text.includes('Follow') && 
-                  !text.includes('Connect') && 
-                  !text.includes('•') && 
-                  !text.includes('1st') && 
-                  !text.includes('2nd') && 
-                  !text.includes('3rd+') &&
-                  !text.includes('connection') &&
-                  !text.includes('mutual') &&
-                  !text.includes('ago') &&
-                  !text.includes('min') &&
-                  !text.includes('hour') &&
-                  !text.includes('day') &&
-                  !text.includes('week')) {
+                  text.length > 2 && 
+                  text.length < 200) {
                 headline = text;
+                console.log(`[S4S] Post ${index + 1} selected fallback headline: "${headline}"`);
                 break;
               }
             }
@@ -195,6 +182,9 @@ if (window.s4sContentScriptLoaded) {
           headline = headline
             .replace(/\s+•\s+.*$/, '')
             .trim();
+          console.log(`[S4S] Post ${index + 1} final cleaned headline: "${headline}"`);
+        } else {
+          console.log(`[S4S] Post ${index + 1} no headline found`);
         }
         
         // Extract content
