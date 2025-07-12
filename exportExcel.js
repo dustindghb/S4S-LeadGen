@@ -21,7 +21,7 @@ window.exportLeadsToCSV = function(leads) {
   }
   
   // Create CSV content
-  const headers = ['Name', 'Headline', 'Post URL', 'LinkedIn Profile URL', 'Post Date', 'Post Content'];
+  const headers = ['Name', 'Headline', 'Connection Degree', 'Post URL', 'LinkedIn Profile URL', 'Post Date', 'Post Content'];
   const csvRows = [];
   
   // Add headers
@@ -32,6 +32,7 @@ window.exportLeadsToCSV = function(leads) {
     const row = [
       lead.name || '',
       lead.headline || '',
+      lead.connectionDegree || '3rd',
       lead.postUrl || lead.post_url || '',
       lead.linkedinUrl || lead.linkedin_profile_url || '',
       lead.postDate || lead.post_date || '',

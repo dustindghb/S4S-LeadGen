@@ -116,6 +116,7 @@ async function ensureContentScriptInjected() {
     return posts.map(post => ({
       name: post.name || 'Unknown',
       headline: post.headline || '',
+      connection_degree: post.connectionDegree || '3rd',
       post_url: post.postUrl || '',
       linkedin_profile_url: post.linkedinUrl || '',
       post_date: post.postDate || '',
@@ -612,16 +613,17 @@ RESPONSE: Return ONLY "YES" or "NO"`;
       alert('No leads to export!');
       return;
     }
-    // Updated columns to include post URL and post date
+    // Updated columns to include connection degree, post URL and post date
     const headerKeys = [
       'name',
       'headline',
+      'connection_degree',
       'posturl',
       'profileurl',
       'post_date',
       'post_content'
     ];
-    const header = ['Name', 'Headline', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
+    const header = ['Name', 'Headline', 'Connection Degree', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
     function escapeCSVField(field) {
       if (field === null || field === undefined) return '';
       const str = String(field);
@@ -643,6 +645,7 @@ RESPONSE: Return ONLY "YES" or "NO"`;
     const rows = leads.map(lead => [
       escapeCSVField(lead.name || ''),
       escapeCSVField(lead.headline || ''),
+      escapeCSVField(lead.connection_degree || lead.connectionDegree || '3rd'),
       escapeCSVField(lead.posturl || lead.postUrl || ''),
       escapeCSVField(lead.profileurl || lead.linkedin_profile_url || lead.linkedinUrl || ''),
       escapeCSVField(lead.post_date || lead.postDate || ''),

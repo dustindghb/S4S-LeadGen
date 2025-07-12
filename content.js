@@ -115,10 +115,23 @@ if (window.s4sContentScriptLoaded) {
           'span[aria-hidden="true"]'
         ];
         
+        // Also check for connection degree in headline elements
+        let foundConnectionDegree = '';
+        
         for (const selector of headlineSelectors) {
           const headlineElem = post.querySelector(selector);
           if (headlineElem && headlineElem.innerText.trim()) {
             const text = headlineElem.innerText.trim();
+            
+            // Check for connection degree in this text
+            if (!foundConnectionDegree) {
+              const connectionMatch = text.match(/\b(1st|2nd|3rd\+?)\b/i);
+              if (connectionMatch) {
+                foundConnectionDegree = connectionMatch[1];
+                console.log(`[S4S] Found connection degree in headline element: ${foundConnectionDegree}`);
+              }
+            }
+            
             if (text && 
                 text !== name && 
                 text.length > 3 && 
@@ -216,6 +229,23 @@ if (window.s4sContentScriptLoaded) {
           headline = cleanTextContent(headline);
         }
         
+        // Extract connection degree
+        let connectionDegree = extractConnectionDegree(post);
+        
+        // If not found by dedicated extraction, use the one found in headline elements
+        if (!connectionDegree && foundConnectionDegree) {
+          connectionDegree = foundConnectionDegree;
+          console.log(`[S4S] Using connection degree from headline element: ${connectionDegree}`);
+        }
+        
+        // Default to "3rd" if no connection degree found
+        if (!connectionDegree) {
+          connectionDegree = '3rd';
+          console.log(`[S4S] No connection degree found, defaulting to "3rd"`);
+        }
+        
+        console.log(`[S4S] Post ${index + 1} final connection degree: "${connectionDegree}"`);
+        
         // Only add posts that have meaningful content
         if (name && (content || headline)) {
           posts.push({ 
@@ -226,7 +256,8 @@ if (window.s4sContentScriptLoaded) {
             age: extractedAge, 
             postDate, 
             exactDate, 
-            postUrl 
+            postUrl,
+            connectionDegree: connectionDegree || 'Unknown' // Add connection degree to post data
           });
         }
       }
@@ -238,6 +269,121 @@ if (window.s4sContentScriptLoaded) {
     }
   }
   
+    /**
+   * Extracts the degree of connection from a LinkedIn post
+   * @param {string|Element} postContent - The LinkedIn post content (HTML string or DOM element)
+   * @returns {string|null} - The connection degree ('1st', '2nd', '3rd', '3rd+') or null if not found
+   */
+  function getConnectionDegree(postContent) {
+    let content;
+    
+    // Handle both string and DOM element inputs
+    if (typeof postContent === 'string') {
+      content = postContent;
+    } else if (postContent instanceof Element) {
+      content = postContent.innerHTML || postContent.textContent;
+    } else {
+      return null;
+    }
+    
+    // Common patterns for LinkedIn connection degrees
+    const degreePatterns = [
+      /\b(1st|2nd|3rd|3rd\+)\b/gi,
+      /\b(First|Second|Third)\s+degree\s+connection\b/gi,
+      /\b(1st|2nd|3rd|3rd\+)\s+degree\b/gi,
+      /\b(1st|2nd|3rd|3rd\+)\s+connection\b/gi
+    ];
+    
+    for (const pattern of degreePatterns) {
+      const match = content.match(pattern);
+      if (match) {
+        const degree = match[0].toLowerCase();
+        
+        // Normalize the result
+        if (degree.includes('1st') || degree.includes('first')) {
+          return '1st';
+        } else if (degree.includes('2nd') || degree.includes('second')) {
+          return '2nd';
+        } else if (degree.includes('3rd+')) {
+          return '3rd+';
+        } else if (degree.includes('3rd') || degree.includes('third')) {
+          return '3rd';
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * Alternative function that works with DOM selectors for live LinkedIn pages
+   * @param {Element} postElement - The DOM element containing the LinkedIn post
+   * @returns {string|null} - The connection degree or null if not found
+   */
+  function getConnectionDegreeFromDOM(postElement) {
+    if (!postElement) return null;
+    
+    // Common selectors where connection degree appears in LinkedIn posts
+    const selectors = [
+      '.feed-shared-actor__sub-description',
+      '.update-components-actor__sub-description',
+      '.feed-shared-actor__description',
+      '[data-test-id="post-author-details"]',
+      '.feed-shared-actor__meta',
+      '.feed-shared-actor__subline',
+      '.update-components-actor__description',
+      '.feed-shared-actor__info',
+      'span[data-test-id="actor-subline"]',
+      '.feed-shared-actor__container',
+      '.update-components-actor'
+    ];
+    
+    for (const selector of selectors) {
+      const element = postElement.querySelector(selector);
+      if (element) {
+        const degree = getConnectionDegree(element.textContent);
+        if (degree) {
+          console.log(`[S4S] Found connection degree "${degree}" using selector: ${selector}`);
+          return degree;
+        }
+      }
+    }
+    
+    // Fallback: search the entire post element
+    const fallbackDegree = getConnectionDegree(postElement);
+    if (fallbackDegree) {
+      console.log(`[S4S] Found connection degree "${fallbackDegree}" using fallback search`);
+      return fallbackDegree;
+    }
+    
+    console.log('[S4S] No connection degree found');
+    return null;
+  }
+
+  // Function to extract connection degree information (legacy wrapper)
+  function extractConnectionDegree(post) {
+    try {
+      console.log('[S4S] Starting connection degree extraction for post');
+      const result = getConnectionDegreeFromDOM(post);
+      return result || '3rd'; // Return "3rd" instead of empty string for backward compatibility
+    } catch (error) {
+      console.error('[S4S] Error extracting connection degree:', error);
+      return '3rd';
+    }
+  }
+
+  /**
+   * Batch process multiple LinkedIn posts
+   * @param {Array<string|Element>} posts - Array of post contents or DOM elements
+   * @returns {Array<{index: number, degree: string|null}>} - Array of results with indices
+   */
+  function getConnectionDegreesFromPosts(posts) {
+    return posts.map((post, index) => ({
+      index,
+      degree: getConnectionDegree(post)
+    }));
+  }
+
   // Function to clean and normalize text content
   function cleanTextContent(text) {
     if (!text) return '';
@@ -280,17 +426,21 @@ if (window.s4sContentScriptLoaded) {
         .replace(/â€"|â€"/g, '–') // En dash variants
         .replace(/â€¦/g, '...') // Ellipsis variant
         .replace(/â€¦/g, '...') // Another ellipsis variant
-        // Remove other weird characters that might appear
-        .replace(/[^\x00-\x7F\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s]/gu, (char) => {
-          // Keep only printable ASCII, emojis, and whitespace
-          if (char.charCodeAt(0) < 32 || char.charCodeAt(0) > 126) {
-            // Check if it's a valid emoji or whitespace
-            if (!/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\s]/u.test(char)) {
-              return ''; // Remove invalid characters
-            }
+        // More aggressive character filtering - only allow basic ASCII, common punctuation, and spaces
+        .replace(/[^\x20-\x7E]/g, (char) => {
+          const code = char.charCodeAt(0);
+          // Allow only printable ASCII (32-126) and common whitespace
+          if (code >= 32 && code <= 126) {
+            return char;
           }
-          return char;
-        });
+          // Replace with space or remove
+          return ' ';
+        })
+        // Remove any remaining weird characters that might have slipped through
+        .replace(/[^\w\s.,!?;:'"()\-–—…]/g, ' ')
+        // Clean up multiple spaces
+        .replace(/\s+/g, ' ')
+        .trim();
       
       // Clean up newlines and whitespace
       cleanedText = cleanedText
@@ -811,6 +961,30 @@ if (window.s4sContentScriptLoaded) {
     }
   }
 
+  // Debug function to test connection degree extraction
+  function debugConnectionDegree() {
+    console.log('[S4S] Debugging connection degree extraction...');
+    const posts = document.querySelectorAll('div.feed-shared-update-v2[data-urn*="activity"], article.feed-shared-update-v2[data-urn*="activity"]');
+    console.log(`[S4S] Found ${posts.length} posts to test`);
+    
+    for (let i = 0; i < Math.min(posts.length, 3); i++) {
+      const post = posts[i];
+      console.log(`[S4S] Testing post ${i + 1}:`);
+      console.log(`[S4S] Post HTML:`, post.outerHTML.substring(0, 500) + '...');
+      
+      // Test both the new and legacy functions
+      const newResult = getConnectionDegreeFromDOM(post);
+      const legacyResult = extractConnectionDegree(post);
+      
+      console.log(`[S4S] New function result: "${newResult}"`);
+      console.log(`[S4S] Legacy function result: "${legacyResult}"`);
+      
+      // Also test with text content
+      const textResult = getConnectionDegree(post.textContent);
+      console.log(`[S4S] Text content result: "${textResult}"`);
+    }
+  }
+
   // Listen for messages from popup or background
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     console.log('[S4S] Received message:', msg);
@@ -857,6 +1031,12 @@ if (window.s4sContentScriptLoaded) {
 
       if (msg.action === "ping") {
         sendResponse({ success: true });
+        return false; // Synchronous response
+      }
+
+      if (msg.action === "debugConnectionDegree") {
+        debugConnectionDegree();
+        sendResponse({ success: true, message: "Debug completed - check console" });
         return false; // Synchronous response
       }
       
