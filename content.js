@@ -50,47 +50,144 @@ if (window.s4sContentScriptLoaded) {
           post.dataset.s4sPostUrl = postUrl;
         }
         
-        // More specific name selectors
-        const nameSelectors = [
-          'span.feed-shared-actor__name',
-          'a[data-control-name="actor_profile"] span',
-          'span[aria-hidden="true"]:not([class*="navigation"])'
-        ];
-        
+        // More targeted approach to find the post author's name and profile
         let name = '';
-        for (const selector of nameSelectors) {
-          const nameElem = post.querySelector(selector);
-          if (nameElem && nameElem.innerText.trim() && nameElem.innerText.trim().length > 0) {
-            name = nameElem.innerText.trim();
-            break;
+        let linkedinUrl = '';
+        let nameContainer = null;
+        
+        // First, try to find the specific author name element with the exact class
+        const authorNameElement = post.querySelector('span.sExBUDsubYecFzuEceaNRAkkGmqOjwDiPLAo span[aria-hidden="true"]');
+        
+        if (authorNameElement && authorNameElement.innerText.trim()) {
+          name = authorNameElement.innerText.trim();
+          console.log(`[S4S] Post ${index + 1} found author name: "${name}"`);
+          
+          // Find the closest container that should hold the profile link
+          nameContainer = authorNameElement.closest('.feed-shared-actor__container, .update-components-actor, [class*="actor"]');
+          
+          if (nameContainer) {
+            console.log(`[S4S] Post ${index + 1} found name container:`, nameContainer);
+            
+            // Look for the profile link within this specific container
+            const profileSelectors = [
+              'a[data-control-name="actor_profile"]',
+              'a[href*="/in/"]',
+              'a[href*="linkedin.com/in/"]'
+            ];
+            
+            for (const profileSelector of profileSelectors) {
+              const profileLink = nameContainer.querySelector(profileSelector);
+              if (profileLink && profileLink.href) {
+                linkedinUrl = profileLink.href;
+                console.log(`[S4S] Post ${index + 1} found author profile URL: ${linkedinUrl} for author: ${name}`);
+                break;
+              }
+            }
           }
+        }
+        
+        // If we didn't find the specific author name, try broader search
+        if (!name || !linkedinUrl) {
+          console.log(`[S4S] Post ${index + 1} trying broader search - name: "${name}", profile: "${linkedinUrl}"`);
+          
+          // Try to find the main actor/author container
+          const actorContainers = [
+            '.feed-shared-actor__container',
+            '.update-components-actor',
+            '[class*="actor"]',
+            '.feed-shared-actor'
+          ];
+          
+          for (const containerSelector of actorContainers) {
+            const container = post.querySelector(containerSelector);
+            if (container) {
+              console.log(`[S4S] Post ${index + 1} found actor container:`, container);
+              
+              // Look for the author's name within this container
+              const nameSelectors = [
+                'span.feed-shared-actor__name',
+                'a[data-control-name="actor_profile"] span',
+                'span[aria-hidden="true"]',
+                'span.t-bold',
+                'span[class*="name"]'
+              ];
+              
+              for (const nameSelector of nameSelectors) {
+                const nameElem = container.querySelector(nameSelector);
+                if (nameElem && nameElem.innerText.trim() && nameElem.innerText.trim().length > 0) {
+                  const candidateName = nameElem.innerText.trim();
+                  // Filter out common non-name text
+                  if (candidateName.length > 1 && 
+                      candidateName.length < 50 && 
+                      !candidateName.includes('•') &&
+                      !candidateName.includes('Follow') &&
+                      !candidateName.includes('Connect')) {
+                    name = candidateName;
+                    nameContainer = container;
+                    console.log(`[S4S] Post ${index + 1} found author name: "${name}" using selector: ${nameSelector}`);
+                    break;
+                  }
+                }
+              }
+              
+              // If we found a name, look for the corresponding profile link
+              if (name) {
+                const profileSelectors = [
+                  'a[data-control-name="actor_profile"]',
+                  'a[href*="/in/"]',
+                  'a[href*="linkedin.com/in/"]'
+                ];
+                
+                for (const profileSelector of profileSelectors) {
+                  const profileLink = container.querySelector(profileSelector);
+                  if (profileLink && profileLink.href) {
+                    linkedinUrl = profileLink.href;
+                    console.log(`[S4S] Post ${index + 1} found author profile URL: ${linkedinUrl} for author: ${name}`);
+                    break;
+                  }
+                }
+                break; // Found both name and container, exit
+              }
+            }
+          }
+        }
+        
+        // Fallback: if we didn't find both name and profile, try broader search
+        if (!name || !linkedinUrl) {
+          console.log(`[S4S] Post ${index + 1} fallback search - name: "${name}", profile: "${linkedinUrl}"`);
+          
+          // Try to find any profile link in the post
+          if (!linkedinUrl) {
+            const anyProfile = post.querySelector('a[href*="/in/"]');
+            if (anyProfile && anyProfile.href) {
+              linkedinUrl = anyProfile.href;
+              console.log(`[S4S] Post ${index + 1} found fallback profile URL: ${linkedinUrl}`);
+            }
+          }
+          
+          // Try to find any name in the post
+          if (!name) {
+            const anyName = post.querySelector('span[aria-hidden="true"]');
+            if (anyName && anyName.innerText.trim()) {
+              const candidateName = anyName.innerText.trim();
+              if (candidateName.length > 1 && candidateName.length < 50) {
+                name = candidateName;
+                console.log(`[S4S] Post ${index + 1} found fallback name: "${name}"`);
+              }
+            }
+          }
+        }
+        
+        if (!name) {
+          console.log(`[S4S] Post ${index + 1} no author name found`);
+        }
+        if (!linkedinUrl) {
+          console.log(`[S4S] Post ${index + 1} no LinkedIn profile URL found for author: ${name}`);
         }
         
         // Extract professional information - focused on headline
         let headline = '';
-        let linkedinUrl = '';
         let age = '';
-        
-        // Profile link extraction
-        const profileLink = post.querySelector('a[data-control-name="actor_profile"], a[href*="/in/"]');
-        if (profileLink && profileLink.href) {
-          linkedinUrl = profileLink.href;
-        } else {
-          const anyProfile = post.querySelector('a[href*="/in/"]');
-          if (anyProfile && anyProfile.href) {
-            linkedinUrl = anyProfile.href;
-          }
-        }
-        
-        if (!linkedinUrl) {
-          const header = post.querySelector('.feed-shared-actor__container, .update-components-actor');
-          if (header) {
-            const headerProfile = header.querySelector('a[href*="/in/"]');
-            if (headerProfile && headerProfile.href) {
-              linkedinUrl = headerProfile.href;
-            }
-          }
-        }
         
         // Extract date and age using enhanced function
         const dateInfo = extractPostDateAndAge(post, index);
