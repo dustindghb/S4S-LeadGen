@@ -972,6 +972,11 @@ if (window.s4sContentScriptLoaded) {
   let isScrolling = false;
   let shouldStopScrolling = false;
   let scrollTimeoutId = null;
+  
+  // Streaming variables
+  let streamedPosts = [];
+  let isStreamingEnabled = false;
+  let streamCallback = null;
 
   async function scrollToAbsoluteBottom() {
     console.log('[S4S] Starting scroll to bottom');
@@ -983,6 +988,7 @@ if (window.s4sContentScriptLoaded) {
     const maxStuckCount = 3;
     const maxScrollTime = 60000; // 1 minute maximum scroll time
     const startTime = Date.now();
+    let processedPosts = new Set(); // Track processed posts to avoid duplicates
     
     try {
       while (!shouldStopScrolling) {
@@ -996,6 +1002,11 @@ if (window.s4sContentScriptLoaded) {
         if (shouldStopScrolling) {
           console.log('[S4S] Stopping scroll due to stop signal');
           break;
+        }
+        
+        // Extract and stream new posts if streaming is enabled
+        if (isStreamingEnabled) {
+          await extractAndStreamNewPosts(processedPosts);
         }
         
         // Scroll to bottom
@@ -1045,6 +1056,171 @@ if (window.s4sContentScriptLoaded) {
     if (scrollTimeoutId) {
       clearTimeout(scrollTimeoutId);
       scrollTimeoutId = null;
+    }
+  }
+  
+  // Function to extract and stream new posts in real-time
+  async function extractAndStreamNewPosts(processedPosts) {
+    try {
+      // More specific selectors for LinkedIn posts to avoid navigation elements
+      const postSelectors = [
+        'div.feed-shared-update-v2[data-urn*="activity"]',
+        'article.feed-shared-update-v2[data-urn*="activity"]',
+        'div[data-urn*="activity"]:not([data-urn*="navigation"])',
+        'article[data-urn*="activity"]:not([data-urn*="navigation"])'
+      ];
+      
+      let foundPosts = [];
+      for (const selector of postSelectors) {
+        foundPosts = document.querySelectorAll(selector);
+        if (foundPosts.length > 0) {
+          break;
+        }
+      }
+      
+      const newPosts = [];
+      
+      for (let index = 0; index < foundPosts.length; index++) {
+        const post = foundPosts[index];
+        
+        // Create a unique identifier for this post
+        const postId = post.getAttribute('data-urn') || post.dataset.s4sPostUrl || `post-${index}`;
+        
+        // Skip if we've already processed this post
+        if (processedPosts.has(postId)) {
+          continue;
+        }
+        
+        // Mark as processed
+        processedPosts.add(postId);
+        
+        // Extract post data (reuse the same logic as extractPosts)
+        let postUrl = post.dataset.s4sPostUrl || extractPostUrl(post, index);
+        if (postUrl) {
+          post.dataset.s4sPostUrl = postUrl;
+        }
+        
+        // Extract author name and profile
+        const authorNameElement = post.querySelector('span.sExBUDsubYecFzuEceaNRAkkGmqOjwDiPLAo span[aria-hidden="true"]');
+        let name = '';
+        let linkedinUrl = '';
+        let nameContainer = null;
+        
+        if (authorNameElement && authorNameElement.innerText.trim()) {
+          name = authorNameElement.innerText.trim();
+          nameContainer = authorNameElement.closest('.feed-shared-actor__container, .update-components-actor, [class*="actor"]');
+          
+          if (nameContainer) {
+            const profileSelectors = [
+              'a[data-control-name="actor_profile"]',
+              'a[href*="/in/"]',
+              'a[href*="linkedin.com/in/"]'
+            ];
+            
+            for (const profileSelector of profileSelectors) {
+              const profileLink = nameContainer.querySelector(profileSelector);
+              if (profileLink && profileLink.href) {
+                linkedinUrl = profileLink.href;
+                break;
+              }
+            }
+          }
+        }
+        
+        // Extract headline
+        let headline = '';
+        const headlineSelectors = [
+          '.update-components-actor__description span[aria-hidden="true"]',
+          '.feed-shared-actor__subline span[aria-hidden="true"]',
+          '.feed-shared-actor__description span[aria-hidden="true"]',
+          'span[data-test-id="actor-subline"] span[aria-hidden="true"]',
+          'span[aria-hidden="true"]'
+        ];
+        
+        for (const selector of headlineSelectors) {
+          const headlineElem = post.querySelector(selector);
+          if (headlineElem && headlineElem.innerText.trim()) {
+            const text = headlineElem.innerText.trim();
+            if (text && 
+                text !== name && 
+                text.length > 2 && 
+                text.length < 200) {
+              headline = text;
+              break;
+            }
+          }
+        }
+        
+        // Extract content
+        let content = '';
+        const contentSelectors = [
+          'div.feed-shared-update-v2__description',
+          'div.feed-shared-text',
+          'span.break-words',
+          'div[data-test-id="post-content"]',
+          '.feed-shared-update-v2__description-wrapper'
+        ];
+        
+        for (const selector of contentSelectors) {
+          const contentElem = post.querySelector(selector);
+          if (contentElem && contentElem.innerText.trim()) {
+            const text = contentElem.innerText.trim();
+            if (text.length > 10 && 
+                !text.includes('Follow') && 
+                !text.includes('Connect') && 
+                !text.includes('•') && 
+                !text.includes('1st') && 
+                !text.includes('2nd') && 
+                !text.includes('3rd+')) {
+              content = cleanTextContent(text);
+              break;
+            }
+          }
+        }
+        
+        // Extract date info
+        const dateInfo = extractPostDateAndAge(post, index);
+        
+        // Extract connection degree
+        let connectionDegree = extractConnectionDegree(post);
+        if (!connectionDegree) {
+          connectionDegree = '3rd';
+        }
+        
+        // Only add posts that have meaningful content
+        if (name && (content || headline)) {
+          const postData = {
+            name,
+            content,
+            headline,
+            linkedinUrl,
+            age: dateInfo.age,
+            postDate: dateInfo.postDate,
+            exactDate: dateInfo.exactDate,
+            postUrl,
+            connectionDegree: connectionDegree || 'Unknown',
+            postId: postId
+          };
+          
+          newPosts.push(postData);
+          streamedPosts.push(postData);
+        }
+      }
+      
+      // Stream new posts if we have any and streaming is enabled
+      if (newPosts.length > 0 && isStreamingEnabled && streamCallback) {
+        console.log(`[S4S] Streaming ${newPosts.length} new posts`);
+        try {
+          streamCallback(newPosts);
+        } catch (error) {
+          console.error('[S4S] Error in stream callback:', error);
+        }
+      }
+      
+      return newPosts;
+    } catch (error) {
+      console.error('[S4S] Error in extractAndStreamNewPosts:', error);
+      return [];
     }
   }
 
@@ -1127,9 +1303,48 @@ if (window.s4sContentScriptLoaded) {
         return false; // Synchronous response
       }
       
+      if (msg.action === "startStreaming") {
+        console.log('[S4S] Starting streaming mode');
+        isStreamingEnabled = true;
+        streamedPosts = [];
+        streamCallback = (posts) => {
+          // Send streamed posts back to popup
+          chrome.runtime.sendMessage({
+            action: 'streamedPosts',
+            posts: posts
+          }).catch(error => {
+            console.error('[S4S] Error sending streamed posts:', error);
+          });
+        };
+        sendResponse({ success: true, message: "Streaming started" });
+        return false; // Synchronous response
+      }
+      
+      if (msg.action === "stopStreaming") {
+        console.log('[S4S] Stopping streaming mode');
+        isStreamingEnabled = false;
+        streamCallback = null;
+        sendResponse({ success: true, message: "Streaming stopped", totalPosts: streamedPosts.length });
+        return false; // Synchronous response
+      }
+      
+      if (msg.action === "getStreamedPosts") {
+        sendResponse({ success: true, posts: streamedPosts });
+        return false; // Synchronous response
+      }
+      
+      // If no action matches, send error response
+      console.log('[S4S] Unknown action:', msg.action);
+      sendResponse({ success: false, error: 'Unknown action: ' + msg.action });
+      return false;
+      
     } catch (error) {
       console.error('[S4S] Error handling message:', error);
-      sendResponse({ success: false, error: error.message });
+      try {
+        sendResponse({ success: false, error: error.message });
+      } catch (sendError) {
+        console.error('[S4S] Error sending response:', sendError);
+      }
     }
     
     return false; // Default to synchronous response

@@ -240,6 +240,52 @@ LinkedIn Posts Data:
 {data}</pre>
     </div>
     <div class="section-divider"></div>
+    
+    <!-- Progress Metrics Display -->
+    <div class="metrics-display" style="margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;">
+      <h3 style="margin: 0 0 15px 0; color: #333; font-size: 14px; text-align: center;">📈 Progress Metrics</h3>
+      <div style="display: flex; gap: 20px; justify-content: space-around;">
+        <div style="text-align: center; flex: 1;">
+          <div style="font-size: 24px; font-weight: bold; color: #667eea;" id="posts-found-count">0</div>
+          <div style="font-size: 12px; color: #666;">Posts Found</div>
+        </div>
+        <div style="text-align: center; flex: 1;">
+          <div style="font-size: 24px; font-weight: bold; color: #28a745;" id="posts-analyzed-count">0</div>
+          <div style="font-size: 12px; color: #666;">Posts Sent to Ollama</div>
+        </div>
+        <div style="text-align: center; flex: 1;">
+          <div style="font-size: 24px; font-weight: bold; color: #dc3545;" id="leads-found-count">0</div>
+          <div style="font-size: 12px; color: #666;">Leads Found</div>
+        </div>
+        <div style="text-align: center; flex: 1;">
+          <div style="font-size: 24px; font-weight: bold; color: #ffc107;" id="conversion-rate">0%</div>
+          <div style="font-size: 12px; color: #666;">Hiring Rate</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Streaming Data Display -->
+    <div class="streaming-display" style="margin: 15px 0;">
+      <div style="display: flex; gap: 15px;">
+        <!-- All Posts Being Read -->
+        <div style="flex: 1;">
+          <h3 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">📊 All Posts Being Read</h3>
+          <div id="all-posts-display" class="json-display" style="max-height: 300px; font-size: 10px;">
+            <div style="text-align: center; color: #666; padding: 20px;">No posts yet...</div>
+          </div>
+        </div>
+        
+        <!-- Hiring Leads Found -->
+        <div style="flex: 1;">
+          <h3 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">🎯 Hiring Leads Found</h3>
+          <div id="hiring-leads-display" class="json-display" style="max-height: 300px; font-size: 10px;">
+            <div style="text-align: center; color: #666; padding: 20px;">No hiring leads yet...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Legacy Results Display (for backward compatibility) -->
     <div id="results"></div>
     <div id="download-section" style="text-align: center; margin: 15px 0;"></div>
   </div>

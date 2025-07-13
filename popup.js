@@ -32,6 +32,157 @@ RULES:
 LinkedIn Posts Data:
 {data}`;
 
+// Global variables for tracking hiring leads
+let allHiringLeads = [];
+
+// Metrics tracking variables
+let metrics = {
+  postsFound: 0,
+  postsAnalyzed: 0, // Posts sent to Ollama for hiring analysis
+  leadsFound: 0,
+  isStreamingActive: false
+};
+
+// Listen for streamed posts from content script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'streamedPosts' && message.posts) {
+    console.log('[S4S] Received streamed posts:', message.posts.length);
+    
+    // Add to streamed posts array
+    streamedPosts = streamedPosts.concat(message.posts);
+    
+    // Update metrics - posts found
+    if (metrics.isStreamingActive) {
+      metrics.postsFound = streamedPosts.length;
+    }
+    
+    // Update status
+    const statusDiv = document.getElementById('status');
+    if (statusDiv) {
+      statusDiv.textContent = `Streaming: Found ${streamedPosts.length} posts so far...`;
+    }
+    
+    // Update the "All Posts Being Read" display
+    updateAllPostsDisplay();
+    
+    // Update metrics display
+    updateMetricsDisplay();
+    
+    // If real-time analysis is enabled, analyze the new posts
+    if (realTimeAnalysis && message.posts.length > 0) {
+      analyzeStreamedPosts(message.posts, statusDiv).then(hiringPosts => {
+        if (hiringPosts.length > 0) {
+          console.log(`[S4S] Found ${hiringPosts.length} hiring posts in real-time`);
+          
+          // Add new hiring leads to the global array
+          allHiringLeads = allHiringLeads.concat(hiringPosts);
+          
+          // Update metrics - leads found
+          metrics.leadsFound = allHiringLeads.length;
+          updateMetricsDisplay();
+          
+          // Update the "Hiring Leads Found" display
+          updateHiringLeadsDisplay();
+          
+          // Save to storage and download CSV for new leads
+          if (hiringPosts.length > 0) {
+            saveLeadsToStorage(hiringPosts, statusDiv).then(() => {
+              exportLeadsToCSV(hiringPosts);
+              console.log(`[S4S] Real-time: Saved ${hiringPosts.length} new leads and downloaded CSV`);
+            }).catch(error => {
+              console.error('[S4S] Error in real-time save/download:', error);
+            });
+          }
+          
+          // Update status with hiring leads count
+          if (statusDiv) {
+            statusDiv.textContent = `Streaming: Found ${streamedPosts.length} posts, ${allHiringLeads.length} hiring leads so far...`;
+          }
+        }
+      }).catch(error => {
+        console.error('[S4S] Error in real-time analysis:', error);
+      });
+    }
+  }
+});
+
+// Function to update the "All Posts Being Read" display
+function updateAllPostsDisplay() {
+  const allPostsDisplay = document.getElementById('all-posts-display');
+  if (allPostsDisplay) {
+    if (streamedPosts.length === 0) {
+      allPostsDisplay.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">No posts yet...</div>';
+    } else {
+      const jsonString = JSON.stringify(streamedPosts, null, 2);
+      allPostsDisplay.innerHTML = `<pre style="margin: 0; font-size: 10px; line-height: 1.3;">${jsonString}</pre>`;
+    }
+  }
+}
+
+// Function to update the "Hiring Leads Found" display
+function updateHiringLeadsDisplay() {
+  const hiringLeadsDisplay = document.getElementById('hiring-leads-display');
+  if (hiringLeadsDisplay) {
+    if (allHiringLeads.length === 0) {
+      hiringLeadsDisplay.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">No hiring leads yet...</div>';
+    } else {
+      const jsonString = JSON.stringify(allHiringLeads, null, 2);
+      hiringLeadsDisplay.innerHTML = `<pre style="margin: 0; font-size: 10px; line-height: 1.3;">${jsonString}</pre>`;
+    }
+  }
+}
+
+// Function to update metrics display
+function updateMetricsDisplay() {
+  const postsFoundElement = document.getElementById('posts-found-count');
+  const postsAnalyzedElement = document.getElementById('posts-analyzed-count');
+  const leadsFoundElement = document.getElementById('leads-found-count');
+  const conversionRateElement = document.getElementById('conversion-rate');
+  
+  if (postsFoundElement) {
+    postsFoundElement.textContent = metrics.postsFound;
+  }
+  
+  if (postsAnalyzedElement) {
+    postsAnalyzedElement.textContent = metrics.postsAnalyzed;
+  }
+  
+  if (leadsFoundElement) {
+    leadsFoundElement.textContent = metrics.leadsFound;
+  }
+  
+  if (conversionRateElement) {
+    const rate = metrics.postsAnalyzed > 0 ? ((metrics.leadsFound / metrics.postsAnalyzed) * 100).toFixed(1) : '0';
+    conversionRateElement.textContent = `${rate}%`; // Percentage of analyzed posts that are hiring
+  }
+}
+
+// Function to reset metrics
+function resetMetrics() {
+  metrics = {
+    postsFound: 0,
+    postsAnalyzed: 0,
+    leadsFound: 0,
+    isStreamingActive: false
+  };
+  updateMetricsDisplay();
+}
+
+// Function to clear all displays
+function clearAllDisplays() {
+  streamedPosts = [];
+  allHiringLeads = [];
+  updateAllPostsDisplay();
+  updateHiringLeadsDisplay();
+  resetMetrics();
+  
+  // Clear legacy results display
+  const resultsDiv = document.getElementById('results');
+  if (resultsDiv) {
+    resultsDiv.innerHTML = '';
+  }
+}
+
 // Helper to get the most recently active LinkedIn tab
 async function getMostRecentLinkedInTab() {
   return new Promise((resolve) => {
@@ -483,11 +634,90 @@ RESPONSE:`;
     return response.data.response;
   }
   
+  // Function to analyze posts in real-time as they stream
+async function analyzeStreamedPosts(posts, statusDiv) {
+  try {
+    if (!posts || posts.length === 0) {
+      return [];
+    }
+    
+    console.log(`[S4S] Analyzing ${posts.length} streamed posts in real-time`);
+    
+    const hiringPosts = [];
+    
+    for (let i = 0; i < posts.length; i++) {
+      const post = posts[i];
+      
+      try {
+        // Increment posts analyzed counter - this post is being sent to Ollama for hiring analysis
+        metrics.postsAnalyzed++;
+        updateMetricsDisplay();
+        
+        // Check if post is hiring-related
+        const isHiring = await checkIfPostIsHiring(post);
+        
+        if (isHiring) {
+          console.log(`[S4S] Found hiring post: ${post.name}`);
+          
+          // Extract title and company from headline (separate Ollama call)
+          const titleCompanyData = await extractTitleAndCompany(post);
+          
+          const enrichedPost = {
+            ...post,
+            title: titleCompanyData.title,
+            company: titleCompanyData.company
+          };
+          
+          hiringPosts.push(enrichedPost);
+          
+          // Update metrics - leads found
+          metrics.leadsFound = allHiringLeads.length + hiringPosts.length;
+          updateMetricsDisplay();
+          
+          // Update status in real-time
+          statusDiv.textContent = `Found ${hiringPosts.length} hiring posts so far...`;
+          
+          // Display results in real-time
+          if (hiringPosts.length > 0) {
+            const jsonString = JSON.stringify(hiringPosts, null, 2);
+            document.getElementById('results').innerHTML = `<div class="json-display">${jsonString}</div>`;
+          }
+        }
+      } catch (error) {
+        console.error(`[S4S] Error analyzing streamed post ${i + 1}:`, error);
+      }
+    }
+    
+    // If we found hiring posts, save them to storage and download CSV
+    if (hiringPosts.length > 0) {
+      try {
+        // Save to storage
+        await saveLeadsToStorage(hiringPosts, statusDiv);
+        
+        // Download CSV automatically
+        exportLeadsToCSV(hiringPosts);
+        
+        console.log(`[S4S] Automatically saved ${hiringPosts.length} leads to storage and downloaded CSV`);
+      } catch (error) {
+        console.error('[S4S] Error saving leads or downloading CSV:', error);
+      }
+    }
+    
+    return hiringPosts;
+  } catch (error) {
+    console.error('[S4S] Error in analyzeStreamedPosts:', error);
+    return [];
+  }
+}
+  
 
   
   // Global variables
   let extractedPosts = [];
   let isScrolling = false;
+  let streamedPosts = [];
+  let isStreamingEnabled = false;
+  let realTimeAnalysis = false;
   let currentTabId = null;
   let scrollAbortController = null;
   
@@ -560,7 +790,7 @@ RESPONSE:`;
         const tabId = tab.id;
         startBtn.disabled = true;
         stopBtn.disabled = false;
-        statusDiv.textContent = 'Preparing to scroll...';
+        statusDiv.textContent = 'Preparing to scroll with streaming...';
 
         // Ensure content script is injected
         const injected = await ensureContentScriptInjected();
@@ -580,9 +810,35 @@ RESPONSE:`;
           return;
         }
 
-        statusDiv.textContent = 'Starting scroll...';
+        // Clear all displays for new streaming session
+        clearAllDisplays();
+        
+        // Activate metrics tracking
+        metrics.isStreamingActive = true;
+        updateMetricsDisplay();
+        
+        // Start streaming mode
+        statusDiv.textContent = 'Starting streaming mode...';
+        await sendMessage(tabId, { action: "startStreaming" }, 5000);
+        
+        // Test Ollama connection for real-time analysis
+        try {
+          const connectionTest = await testOllamaConnection();
+          if (connectionTest.success) {
+            realTimeAnalysis = true;
+            statusDiv.textContent = `Streaming with real-time analysis. Available models: ${connectionTest.models.join(', ')}`;
+          } else {
+            realTimeAnalysis = false;
+            statusDiv.textContent = 'Streaming without real-time analysis (Ollama not available)';
+          }
+        } catch (error) {
+          realTimeAnalysis = false;
+          statusDiv.textContent = 'Streaming without real-time analysis (Ollama not available)';
+        }
+
+        statusDiv.textContent = 'Starting scroll with streaming...';
         await sendMessage(tabId, { action: "performSingleScroll" }, 30000);
-        // Remove: statusDiv.textContent = 'Scroll completed.';
+        
         startBtn.disabled = false;
         stopBtn.disabled = true;
       } catch (error) {
@@ -596,7 +852,7 @@ RESPONSE:`;
       try {
         startBtn.disabled = false;
         stopBtn.disabled = true;
-        statusDiv.textContent = 'Stopping scroll...';
+        statusDiv.textContent = 'Stopping scroll and streaming...';
 
         const tab = await getMostRecentLinkedInTab();
         if (!tab) {
@@ -604,27 +860,64 @@ RESPONSE:`;
           return;
         }
         const tabId = tab.id;
+        
+        // Stop scrolling
         await sendMessage(tabId, { action: "stopScroll" }, 5000);
-        statusDiv.textContent = 'Scrolling stopped. Extracting posts...';
-
-        // Automatically extract posts after stopping scroll
-        const injected = await ensureContentScriptInjected();
-        if (!injected) {
-          statusDiv.textContent = 'Error: Could not inject content script. Please refresh the LinkedIn page.';
-          return;
-        }
-        const isResponsive = await testContentScript(tabId);
-        if (!isResponsive) {
-          statusDiv.textContent = 'Error: Content script not responsive. Please refresh the LinkedIn page.';
-          return;
-        }
-        const response = await sendMessage(tabId, { action: "extractPosts" });
-        if (response && response.posts) {
-          extractedPosts = response.posts;
-          statusDiv.textContent = `Found ${response.posts.length} posts after scrolling.`;
-          displayJSONData(response.posts);
+        
+        // Stop streaming and get final results
+        const streamResponse = await sendMessage(tabId, { action: "stopStreaming" }, 5000);
+        if (streamResponse && streamResponse.success) {
+          // Deactivate metrics tracking
+          metrics.isStreamingActive = false;
+          
+          statusDiv.textContent = `Streaming stopped. Total posts processed: ${streamResponse.totalPosts}`;
+          
+          // Get all streamed posts
+          const finalResponse = await sendMessage(tabId, { action: "getStreamedPosts" }, 5000);
+          if (finalResponse && finalResponse.success && finalResponse.posts) {
+            streamedPosts = finalResponse.posts;
+            extractedPosts = streamedPosts;
+            
+            // Update final metrics
+            metrics.postsFound = streamedPosts.length;
+            updateMetricsDisplay();
+            
+            statusDiv.textContent = `Found ${streamedPosts.length} posts through streaming.`;
+            
+            // Update displays one final time
+            updateAllPostsDisplay();
+            updateHiringLeadsDisplay();
+            
+            // Final CSV download if we have hiring leads (in case some weren't processed during streaming)
+            if (allHiringLeads.length > 0) {
+              statusDiv.textContent = `Found ${streamedPosts.length} posts, ${allHiringLeads.length} hiring leads. Final CSV download...`;
+              exportLeadsToCSV(allHiringLeads);
+              statusDiv.textContent = `✅ Complete! Found ${allHiringLeads.length} hiring leads. CSV downloaded.`;
+            } else {
+              statusDiv.textContent = `Found ${streamedPosts.length} posts, but no hiring leads found.`;
+            }
+          }
         } else {
-          resultsDiv.textContent = 'No posts found or not on LinkedIn feed page.';
+          // Fallback to regular extraction
+          statusDiv.textContent = 'Scrolling stopped. Extracting posts...';
+          const injected = await ensureContentScriptInjected();
+          if (!injected) {
+            statusDiv.textContent = 'Error: Could not inject content script. Please refresh the LinkedIn page.';
+            return;
+          }
+          const isResponsive = await testContentScript(tabId);
+          if (!isResponsive) {
+            statusDiv.textContent = 'Error: Content script not responsive. Please refresh the LinkedIn page.';
+            return;
+          }
+          const response = await sendMessage(tabId, { action: "extractPosts" });
+          if (response && response.posts) {
+            extractedPosts = response.posts;
+            statusDiv.textContent = `Found ${response.posts.length} posts after scrolling.`;
+            displayJSONData(response.posts);
+          } else {
+            resultsDiv.textContent = 'No posts found or not on LinkedIn feed page.';
+          }
         }
       } catch (error) {
         statusDiv.textContent = 'Error: ' + error.message;
