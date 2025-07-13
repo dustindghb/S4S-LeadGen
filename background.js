@@ -3,10 +3,12 @@ chrome.action.onClicked.addListener((tab) => {
   // Extension icon clicked - open popup in detachable window
   chrome.windows.create({
     url: 'popup.html',
-    type: 'popup',
+    type: 'normal',
     width: 450,
     height: 600,
-    focused: true
+    focused: true,
+    left: 100,
+    top: 100
   });
 });
 
