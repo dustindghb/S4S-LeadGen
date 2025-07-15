@@ -1,5 +1,57 @@
-Ollama Command
-export OLLAMA_ORIGINS=chrome-extension://acfgodflnfcmiinhaemaoagakhhmcham
-ollama serve
+# S4S LinkedIn Lead Generation Tool
 
-acfgodflnfcmiinhaemaoagakhhmcham
+## New Streaming Analysis Feature
+
+This extension now supports **real-time streaming analysis** of LinkedIn posts during scrolling, providing a much more efficient workflow for lead generation.
+
+### How It Works
+
+1. **Start Scrolling & Analysis**: Click this button to begin scrolling LinkedIn and analyzing posts in real-time
+2. **Real-time Processing**: As LinkedIn loads new posts during scrolling, each post is immediately:
+   - Sent to Ollama to determine if it's a hiring post
+   - If it's a lead, extracts the author's title and company
+   - Adds it to the results immediately
+3. **Live Metrics**: Watch real-time statistics including:
+   - Posts Found: Total number of posts discovered
+   - Posts Analyzed: Number of posts sent to Ollama
+   - Leads Found: Number of hiring posts identified
+   - Analysis Status: Current state (Scrolling & Analyzing, Analyzing Remaining, Complete)
+4. **Continuous Analysis**: After stopping scrolling, analysis continues until all posts are processed
+5. **Stop Scrolling**: Click to stop scrolling but continue analyzing remaining posts
+6. **Download Leads as CSV**: Export all found leads to a CSV file
+
+### Benefits of Streaming Analysis
+
+- **Faster Results**: No need to wait for all posts to load before analysis begins
+- **Real-time Feedback**: See leads being found as you scroll with live metrics
+- **Better Performance**: Processes posts as they're discovered rather than in large batches
+- **Continuous Processing**: Analysis continues after scrolling stops until all posts are processed
+- **Immediate CSV Export**: Download results as soon as analysis completes
+
+### Live Metrics Display
+
+The extension now shows live metrics during analysis:
+- **Posts Found**: Total posts discovered on the page
+- **Posts Analyzed**: Posts that have been sent to Ollama for analysis
+- **Leads Found**: Hiring posts that have been identified and enriched with title/company data
+- **Analysis Status**: 
+  - "Scrolling & Analyzing": Active scrolling and analysis
+  - "Analyzing Remaining": Scrolling stopped, continuing to analyze remaining posts
+  - "Complete": All posts have been analyzed
+
+### Requirements
+
+- Ollama running locally on port 11435
+- A model like `gemma3:12b` installed in Ollama
+- LinkedIn page open in a browser tab
+
+### Usage
+
+1. Open LinkedIn and navigate to your feed
+2. Click "Start Scrolling & Analysis"
+3. Watch the live metrics as the extension scrolls LinkedIn and analyzes posts in real-time
+4. Click "Stop Scrolling" when you want to stop scrolling (analysis continues)
+5. Wait for analysis to complete (status will show "Complete")
+6. Click "Download Leads as CSV" to export results
+
+The extension automatically saves leads to browser storage, so you can download them later even if you close the popup.

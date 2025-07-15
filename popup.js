@@ -129,10 +129,7 @@ async function ensureContentScriptInjected() {
   // Function to display JSON data
   function displayJSONData(posts) {
     const resultsDiv = document.getElementById('results');
-    const jsonData = organizeDataForJSON(posts);
-    const jsonString = safeJSONStringify(jsonData);
-    
-    resultsDiv.innerHTML = `<div class="json-display">${jsonString}</div>`;
+    resultsDiv.innerHTML = `<div style="background: #e3f2fd; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 12px; color: #1976d2; border-left: 4px solid #2196f3;">Data processing complete. Use the download buttons to export results.</div>`;
   }
 
   // Function to send message to background script
@@ -190,41 +187,44 @@ async function ensureContentScriptInjected() {
   // Function to check if a single post is about hiring
   async function checkIfPostIsHiring(post) {
     const HIRING_CLASSIFIER_PROMPT = `SYSTEM: You are a hiring post classifier. Return ONLY "YES" or "NO".
+TASK: Determine if this LinkedIn post is from someone actively HIRING others RIGHT NOW.
 
-TASK: Determine if this LinkedIn post is from someone actively HIRING others (not seeking employment themselves).
+RETURN "YES" IF THE POST CONTAINS ANY OF THESE HIRING INDICATORS:
+- "We are hiring" / "We're hiring" / "Now hiring"
+- "We're looking for" / "We are looking for" / "Looking for" (when referring to employees/candidates)
+- "Join our team" / "Join us" / "Come work with us"
+- "We have openings" / "We have positions available"
+- "Apply now" / "Send your resume" / "Interested? Contact us"
+- "Know anyone who might be interested?" (about a specific role)
+- Specific job titles with hiring intent (e.g., "Seeking Software Engineer", "Need Marketing Manager")
+- "DM me your resume" / "Send me your CV"
+- "Applications open" / "Currently accepting applications"
+- "Expanding our team" + specific role mentions
+- "Remote/hybrid opportunity available"
+- Posts with clear job descriptions or requirements
+- "Tag someone who would be perfect for this role"
 
-CRITICAL RULES:
-- Return "YES" ONLY if the author is OFFERING employment/work to others
-- Return "NO" if someone is seeking employment for themselves
-- Return "NO" if "hiring" is mentioned casually without intent to hire
+RETURN "NO" FOR ALL OF THESE:
+- Job seekers looking for work ("I'm looking for work", "Open to work", "Recently laid off")
+- Career advice or tips about hiring/interviewing processes
+- Lists of recruiters or job resources for job seekers
+- General business/sales advice that mentions hiring
+- Posts about company growth WITHOUT specific job openings or hiring language
+- Personal career journey stories or job transitions
+- Networking posts asking for general connections
+- Posts about being hired or starting new roles (past tense)
+- Industry discussions about hiring trends or market conditions
+- Posts where hiring is mentioned in context but no job is offered
+- "How to get hired" or "Tips for job interviews"
+- "Here's how to improve your hiring process" (advice to employers)
+- "After 3 years my journey ended due to redundancy" (job loss)
+- "Here's a list of recruiters looking to fill roles" (resource sharing)
+- "Landing interviews but getting rejected? Here's how to fix it" (job seeker advice)
 
-EMPLOYER HIRING SIGNALS (return "YES"):
-- "We are hiring", "We're hiring", "My company is hiring"
-- "Looking to hire", "Hiring for [role]", "Actively hiring"
-- "Join our team", "We're looking for", "We need"
-- "Open position", "Job opening", "Position available"
-- "Apply now", "Send your resume", "Interested candidates"
-- "Recruiting", "Now hiring", "Talent acquisition"
-- "Contract opportunity", "Freelance opportunity", "Project needs"
-- "Anyone available for", "Know someone who", "Recommendations for a [role]"
-
-JOB SEEKER SIGNALS (return "NO"):
-- "I am looking for", "I'm seeking", "I need a job"
-- "Available for hire", "Open to opportunities", "Seeking employment"
-- "Looking for work", "Job hunting", "Recently laid off"
-- "My resume", "Hire me", "I'm interested in"
-- "Does anyone know of", "Any openings", "Help me find"
-- "I have experience in", "I can help with", "I specialize in"
-
-CASUAL MENTIONS (return "NO"):
-- General discussion about hiring trends
-- Career advice about hiring processes
-- News articles mentioning hiring
-- Posts about being hired (past tense)
+KEY RULE: If the post contains clear hiring language indicating the author/company is actively seeking candidates, return "YES" - even if the post is brief like "We're hiring!"
 
 POST CONTENT: ${post.content || post.message || ''}
 POST HEADLINE: ${post.headline || ''}
-
 RESPONSE: Return ONLY "YES" or "NO"`;
 
     const response = await sendMessageToBackground({
@@ -232,12 +232,16 @@ RESPONSE: Return ONLY "YES" or "NO"`;
       endpoint: '/api/generate',
       method: 'POST',
       body: {
-        model: 'gemma3:12b', // Use the correct model name
+        model: 'gemma3:12b',
         prompt: HIRING_CLASSIFIER_PROMPT,
         stream: false,
         options: {
-          temperature: 0.1, // Lower temperature for more consistent results
-          num_predict: 10   // Limit response length
+          temperature: 0.0,        // Lower for faster, more consistent responses
+          num_predict: 5,          // Limit response length (just need YES/NO)
+          top_k: 1,               // Only consider top token
+          top_p: 0.1,             // Lower for faster sampling
+          repeat_penalty: 1.0,     // Minimal penalty
+          num_ctx: 512            // Smaller context window
         }
       }
     });
@@ -277,33 +281,19 @@ RESPONSE: Return ONLY "YES" or "NO"`;
       };
     }
     
-    const titleCompanyPrompt = `SYSTEM: You are a professional information extractor. Return ONLY valid JSON.
-
-TASK: Extract the job title and company name from the LinkedIn headline.
+    const titleCompanyPrompt = `Extract job title and company from LinkedIn headline.
 
 HEADLINE: ${headlineText}
 
-OUTPUT FORMAT - RETURN ONLY THIS JSON:
-{
-  "title": "exact job title or 'Unknown Title' if not found",
-  "company": "exact company name or 'Unknown Company' if not found"
-}
+Return JSON only:
+{"title": "job title", "company": "company name"}
 
-RULES:
-1. Return ONLY the JSON object above
-2. No text before or after the JSON
-3. If title/company cannot be determined, use "Unknown Title"/"Unknown Company"
-4. Copy exact values from the headline
-5. Separate title and company if they are combined (e.g., "Software Engineer at Google" -> title: "Software Engineer", company: "Google")
-6. Handle various formats: "Title at Company", "Title, Company", "Title • Company", etc.
+Examples:
+"Software Engineer at Google" -> {"title": "Software Engineer", "company": "Google"}
+"Marketing Manager, Apple" -> {"title": "Marketing Manager", "company": "Apple"}
+"CEO • Startup" -> {"title": "CEO", "company": "Startup"}
 
-EXAMPLES:
-- "Software Engineer at Google" -> {"title": "Software Engineer", "company": "Google"}
-- "Marketing Manager, Apple Inc." -> {"title": "Marketing Manager", "company": "Apple Inc."}
-- "CEO • Startup" -> {"title": "CEO", "company": "Startup"}
-- "Just a title" -> {"title": "Just a title", "company": "Unknown Company"}
-
-RESPONSE:`;
+JSON:`;
 
     console.log(`[S4S] Sending prompt to Ollama:`, titleCompanyPrompt);
 
@@ -316,8 +306,12 @@ RESPONSE:`;
         prompt: titleCompanyPrompt,
         stream: false,
         options: {
-          temperature: 0.1,
-          num_predict: 150
+          temperature: 0.0,        // Lower for faster, more consistent responses
+          num_predict: 100,        // Reduced for faster response
+          top_k: 1,               // Only consider top token
+          top_p: 0.1,             // Lower for faster sampling
+          repeat_penalty: 1.0,     // Minimal penalty
+          num_ctx: 512            // Smaller context window
         }
       }
     });
@@ -484,7 +478,22 @@ RESPONSE:`;
   let isScrolling = false;
   let currentTabId = null;
   let scrollAbortController = null;
-  
+  let streamingLeads = []; // New: store leads found during streaming
+  let isStreamingAnalysis = false; // New: track if we're doing streaming analysis
+  let processedPostCount = 0; // New: track processed posts
+  let totalPostCount = 0; // New: track total posts found
+  let streamingAnalysisInterval = null; // New: store the analysis interval
+  let isScrollingActive = false; // New: track if scrolling is active
+  let allPostsProcessed = false; // New: track if all posts have been analyzed
+  let processedPostIds = new Set(); // New: track which posts have been processed by unique ID
+  let analysisIterationCount = 0; // New: track analysis iterations to prevent infinite loops
+  let postQueue = []; // New: queue of posts to be processed
+  let isProcessingQueue = false; // New: track if we're currently processing the queue
+  let optimalBatchSize = 3; // New: dynamic batch size for parallel processing
+  let lastProcessingTime = 0; // New: track processing time to optimize batch size
+  let allAnalyzedPosts = []; // New: store all posts with their analysis results
+  let metricsUpdateInterval = null; // New: interval for frequent metrics updates
+
   // Helper to save and load leads from chrome.storage
   function saveLeadsToStorage(leads, statusDiv) {
     return new Promise((resolve) => {
@@ -537,8 +546,9 @@ RESPONSE:`;
     // Restore Start/Stop Scrolling button functionality
     const startBtn = document.getElementById('startScroll');
     const stopBtn = document.getElementById('stopScroll');
-    if (!startBtn || !stopBtn) {
-      statusDiv.textContent = 'Error: Start/Stop Scrolling buttons not found in popup. Please check popup.html.';
+    const stopAnalysisBtn = document.getElementById('stopAnalysis');
+    if (!startBtn || !stopBtn || !stopAnalysisBtn) {
+      statusDiv.textContent = 'Error: Start/Stop buttons not found in popup. Please check popup.html.';
       return;
     }
 
@@ -554,7 +564,8 @@ RESPONSE:`;
         const tabId = tab.id;
         startBtn.disabled = true;
         stopBtn.disabled = false;
-        statusDiv.textContent = 'Preparing to scroll...';
+        stopAnalysisBtn.disabled = false;
+        statusDiv.textContent = 'Preparing to scroll with streaming analysis...';
 
         // Ensure content script is injected
         const injected = await ensureContentScriptInjected();
@@ -574,15 +585,27 @@ RESPONSE:`;
           return;
         }
 
-        statusDiv.textContent = 'Starting scroll...';
-        await sendMessage(tabId, { action: "performSingleScroll" }, 30000);
-        // Remove: statusDiv.textContent = 'Scroll completed.';
+        statusDiv.textContent = 'Starting scroll with streaming analysis...';
+        
+        // Start streaming analysis before scrolling
+        await startStreamingAnalysis(tabId, statusDiv, resultsDiv);
+        
+        // Start scrolling with longer timeout
+        await sendMessage(tabId, { action: "performSingleScroll" }, 120000); // 2 minutes
+        
+        // Scrolling completed, but analysis continues
+        statusDiv.textContent = 'Scrolling completed. Analysis continues...';
+        updateMetrics();
+        
+        // Analysis continues until user clicks stop
         startBtn.disabled = false;
         stopBtn.disabled = true;
+        // Keep stopAnalysisBtn enabled so user can stop analysis
       } catch (error) {
         statusDiv.textContent = 'Error: ' + error.message;
         startBtn.disabled = false;
         stopBtn.disabled = true;
+        stopAnalysisBtn.disabled = true;
       }
     });
 
@@ -590,7 +613,7 @@ RESPONSE:`;
       try {
         startBtn.disabled = false;
         stopBtn.disabled = true;
-        statusDiv.textContent = 'Stopping scroll...';
+        statusDiv.textContent = 'Stopping scrolling...';
 
         const tab = await getMostRecentLinkedInTab();
         if (!tab) {
@@ -598,28 +621,30 @@ RESPONSE:`;
           return;
         }
         const tabId = tab.id;
+        
+        // Stop scrolling but keep analysis running
         await sendMessage(tabId, { action: "stopScroll" }, 5000);
-        statusDiv.textContent = 'Scrolling stopped. Extracting posts...';
+        
+        // Mark scrolling as stopped but keep analysis running
+        isScrollingActive = false;
+        
+        statusDiv.textContent = 'Scrolling stopped. Analysis continues with remaining posts...';
+        updateMetrics();
+      } catch (error) {
+        statusDiv.textContent = 'Error: ' + error.message;
+      }
+    });
 
-        // Automatically extract posts after stopping scroll
-        const injected = await ensureContentScriptInjected();
-        if (!injected) {
-          statusDiv.textContent = 'Error: Could not inject content script. Please refresh the LinkedIn page.';
-          return;
-        }
-        const isResponsive = await testContentScript(tabId);
-        if (!isResponsive) {
-          statusDiv.textContent = 'Error: Content script not responsive. Please refresh the LinkedIn page.';
-          return;
-        }
-        const response = await sendMessage(tabId, { action: "extractPosts" });
-        if (response && response.posts) {
-          extractedPosts = response.posts;
-          statusDiv.textContent = `Found ${response.posts.length} posts after scrolling.`;
-          displayJSONData(response.posts);
-        } else {
-          resultsDiv.textContent = 'No posts found or not on LinkedIn feed page.';
-        }
+    stopAnalysisBtn.addEventListener('click', async () => {
+      try {
+        stopAnalysisBtn.disabled = true;
+        statusDiv.textContent = 'Stopping analysis...';
+        
+        // Stop the streaming analysis completely
+        stopStreamingAnalysis();
+        
+        statusDiv.textContent = 'Analysis stopped. Scrolling continues...';
+        updateMetrics();
       } catch (error) {
         statusDiv.textContent = 'Error: ' + error.message;
       }
@@ -668,103 +693,386 @@ RESPONSE:`;
     // (No download button created)
 
     const findLeadsBtn = window.createFindLeadsButton(controlsDiv, async () => {
-      if (!extractedPosts || extractedPosts.length === 0) {
-        statusDiv.textContent = 'Error: No posts extracted yet. Please extract posts first.';
-        return;
-      }
-      findLeadsBtn.disabled = true;
-      findLeadsBtn.textContent = 'Testing Ollama...';
-      statusDiv.textContent = 'Testing Ollama connection...';
-      resultsDiv.innerHTML = '';
-      
-      try {
-        // Test Ollama connection first
-        const connectionTest = await testOllamaConnection();
-        if (!connectionTest.success) {
-          throw new Error(`Ollama connection failed: ${connectionTest.error}`);
-        }
-        
-        findLeadsBtn.textContent = 'Analyzing...';
-        statusDiv.textContent = `Ollama connected successfully. Available models: ${connectionTest.models.join(', ')}`;
-        
-        const totalPosts = extractedPosts.length;
-        
-        // Step 1: Filter for hiring posts using YES/NO analysis
-        statusDiv.textContent = `Step 1: Analyzing ${totalPosts} posts for hiring content...`;
-        const batchSize = Math.min(5, Math.ceil(totalPosts / 10));
-        const analysisResults = await batchAnalyzePosts(extractedPosts, batchSize);
-        
-        // Filter hiring posts
-        const hiringPosts = analysisResults
-          .filter(result => result.isHiring)
-          .map(result => result.post);
-        
-        console.log(`[S4S] Found ${hiringPosts.length} hiring posts`);
-        
-        if (hiringPosts.length === 0) {
-          statusDiv.textContent = 'No hiring posts found.';
-          resultsDiv.innerHTML = '<div style="color: orange; padding: 10px;">No hiring-related posts found in the extracted data.</div>';
+      // Check if we have streaming leads or need to load from storage
+      if (streamingLeads.length === 0) {
+        // Try to load from storage
+        const storedLeads = await loadLeadsFromStorage(statusDiv);
+        if (storedLeads && storedLeads.length > 0) {
+          streamingLeads = storedLeads;
+          statusDiv.textContent = `Loaded ${streamingLeads.length} leads from storage.`;
+        } else {
+          statusDiv.textContent = 'Error: No leads found. Please start scrolling to analyze posts.';
           return;
         }
-        
-        // Step 2: Extract title and company from hiring posts
-        statusDiv.textContent = `Step 2: Extracting title/company from ${hiringPosts.length} hiring posts...`;
-        
-        console.log(`[S4S] Hiring posts data:`, hiringPosts.map(post => ({
-          name: post.name,
-          headline: post.headline,
-          content: post.content?.substring(0, 50) + '...'
-        })));
-        
-        const enrichedPosts = [];
-        for (let i = 0; i < hiringPosts.length; i++) {
-          const post = hiringPosts[i];
-          statusDiv.textContent = `Extracting title/company from post ${i + 1}/${hiringPosts.length}...`;
-          
-          console.log(`[S4S] Processing post ${i + 1}:`, {
-            name: post.name,
-            headline: post.headline,
-            hasHeadline: !!post.headline,
-            headlineLength: post.headline?.length || 0
-          });
-          
-          try {
-            const titleCompanyData = await extractTitleAndCompany(post);
-            enrichedPosts.push({
-              ...post,
-              title: titleCompanyData.title,
-              company: titleCompanyData.company
-            });
-          } catch (error) {
-            console.error(`[S4S] Error extracting title/company from post ${i + 1}:`, error);
-            // Add post with fallback values
-            enrichedPosts.push({
-              ...post,
-              title: 'Unknown Title',
-              company: 'Unknown Company'
-            });
-          }
-        }
-        
-        await saveLeadsToStorage(enrichedPosts, statusDiv);
-        statusDiv.textContent = `Found ${enrichedPosts.length} hiring-related posts with title/company data!`;
-        const jsonString = JSON.stringify(enrichedPosts, null, 2);
-        resultsDiv.innerHTML = `<div class="json-display">${jsonString}</div>`;
-        if (enrichedPosts.length > 0) {
-          exportLeadsToCSV(enrichedPosts);
-        }
-      } catch (error) {
-        console.error('[S4S] Analysis failed:', error);
-        statusDiv.textContent = `Error: ${error.message}`;
-        resultsDiv.innerHTML = `<div style="color: red; padding: 10px;">Failed to analyze leads: ${error.message}</div>`;
-      } finally {
-        findLeadsBtn.disabled = false;
-        findLeadsBtn.textContent = 'Find Leads';
       }
+      
+      if (streamingLeads.length === 0) {
+        statusDiv.textContent = 'Error: No leads found. Please start scrolling to analyze posts.';
+        return;
+      }
+      
+      // Display and export the leads
+      statusDiv.textContent = `Found ${streamingLeads.length} leads!`;
+      resultsDiv.innerHTML = `<div style="background: #e3f2fd; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 12px; color: #1976d2; border-left: 4px solid #2196f3;">Analysis complete! Found ${streamingLeads.length} leads. Use the download buttons to export results.</div>`;
+      exportLeadsToCSV(streamingLeads);
+    });
+
+    // Add button to download all analyzed posts for review
+    const downloadAllPostsBtn = window.createDownloadAllPostsButton(controlsDiv, () => {
+      if (allAnalyzedPosts.length === 0) {
+        statusDiv.textContent = 'Error: No analyzed posts found. Please start scrolling to analyze posts.';
+        return;
+      }
+      
+      statusDiv.textContent = `Downloading ${allAnalyzedPosts.length} analyzed posts for review...`;
+      exportAllPostsToCSV();
+      statusDiv.textContent = `Downloaded ${allAnalyzedPosts.length} analyzed posts for review.`;
     });
   });
 
-  // Remove Excel export logic and add CSV export logic
+  // New: Function to analyze a single post in real-time
+  async function analyzeSinglePostStreaming(post, statusDiv) {
+    try {
+      // Check if post is hiring
+      const isHiring = await checkIfPostIsHiring(post);
+      
+      // Store the post with analysis result
+      const analyzedPost = {
+        ...post,
+        isHiring: isHiring,
+        analyzedAt: new Date().toISOString()
+      };
+      
+      // Add to all analyzed posts
+      allAnalyzedPosts.push(analyzedPost);
+      
+      if (isHiring) {
+        console.log(`[S4S] Streaming: Post is hiring - ${post.name}`);
+        
+        // Extract title and company
+        const titleCompanyData = await extractTitleAndCompany(post);
+        
+        const enrichedPost = {
+          ...analyzedPost,
+          title: titleCompanyData.title,
+          company: titleCompanyData.company
+        };
+        
+        // Add to streaming leads
+        streamingLeads.push(enrichedPost);
+        
+        // Update status and metrics immediately
+        statusDiv.textContent = `Found lead ${streamingLeads.length}: ${post.name} - ${titleCompanyData.title} at ${titleCompanyData.company}`;
+        updateMetrics();
+        
+        // Save to storage
+        await saveLeadsToStorage(streamingLeads, statusDiv);
+        
+        // Update metrics again after storage
+        updateMetrics();
+        
+        console.log(`[S4S] Streaming: Added lead - ${post.name} (${streamingLeads.length} total)`);
+        return true;
+      } else {
+        console.log(`[S4S] Streaming: Post is not hiring - ${post.name}`);
+        return false;
+      }
+    } catch (error) {
+      console.error(`[S4S] Streaming: Error analyzing post ${post.name}:`, error);
+      
+      // Still store the post even if analysis failed
+      const failedPost = {
+        ...post,
+        isHiring: false,
+        analysisError: error.message,
+        analyzedAt: new Date().toISOString()
+      };
+      allAnalyzedPosts.push(failedPost);
+      
+      return false;
+    }
+  }
+
+  // New: Function to extract and analyze posts in real-time during scrolling
+  async function extractAndAnalyzePostsStreaming(tabId, statusDiv, resultsDiv) {
+    try {
+      // Early exit if analysis is already complete
+      if (allPostsProcessed || !isStreamingAnalysis) {
+        console.log('[S4S] Analysis already complete or stopped, skipping iteration');
+        return;
+      }
+      
+      analysisIterationCount++;
+      
+      // Only stop if user explicitly stopped the analysis
+      if (!isStreamingAnalysis) {
+        console.log('[S4S] User stopped analysis, stopping iteration');
+        return;
+      }
+      
+      // Extract current posts with longer timeout
+      const response = await sendMessage(tabId, { action: "extractPosts" }, 30000);
+      
+      if (response && response.posts) {
+        const newPosts = response.posts;
+        const previousCount = totalPostCount;
+        totalPostCount = newPosts.length;
+        
+        // Update metrics when total post count changes
+        updateMetrics();
+        
+        // Add new posts to the queue
+        addPostsToQueue(newPosts);
+        
+        console.log(`[S4S] Streaming: Found ${newPosts.length} total posts (was ${previousCount}), Queue size: ${postQueue.length}, Processed: ${processedPostCount}, Analysis running: ${isStreamingAnalysis}, Scrolling active: ${isScrollingActive}`);
+        
+        // Process the queue
+        await processQueue(statusDiv, resultsDiv);
+        
+        // Update extracted posts
+        extractedPosts = newPosts;
+        updateMetrics();
+      } else {
+        console.log(`[S4S] No posts found in response. Response:`, response);
+        console.log(`[S4S] Analysis state - isStreamingAnalysis: ${isStreamingAnalysis}, isScrollingActive: ${isScrollingActive}, allPostsProcessed: ${allPostsProcessed}`);
+      }
+    } catch (error) {
+      console.error('[S4S] Streaming: Error extracting/analyzing posts:', error);
+    }
+  }
+
+  // New: Function to start streaming analysis
+  async function startStreamingAnalysis(tabId, statusDiv, resultsDiv) {
+    isStreamingAnalysis = true;
+    isScrollingActive = true;
+    allPostsProcessed = false;
+    streamingLeads = [];
+    processedPostCount = 0;
+    totalPostCount = 0;
+    processedPostIds.clear(); // Reset processed posts tracking
+    analysisIterationCount = 0; // Reset iteration count
+    postQueue = []; // Reset the queue
+    isProcessingQueue = false; // Reset queue processing flag
+    optimalBatchSize = 3; // Reset batch size
+    lastProcessingTime = 0; // Reset processing time
+    allAnalyzedPosts = []; // Reset analyzed posts tracking
+    metricsUpdateInterval = null; // Reset metrics interval
+    
+    // Show metrics
+    showMetrics(true);
+    updateMetrics();
+    
+    // Test Ollama connection first
+    const connectionTest = await testOllamaConnection();
+    if (!connectionTest.success) {
+      throw new Error(`Ollama connection failed: ${connectionTest.error}`);
+    }
+    
+    statusDiv.textContent = `Ollama connected. Starting streaming analysis...`;
+    
+    // Start periodic analysis during scrolling
+    streamingAnalysisInterval = setInterval(async () => {
+      console.log('[S4S] Analysis interval tick - isStreamingAnalysis:', isStreamingAnalysis, 'allPostsProcessed:', allPostsProcessed);
+      
+      if (!isStreamingAnalysis || allPostsProcessed) {
+        clearInterval(streamingAnalysisInterval);
+        streamingAnalysisInterval = null;
+        console.log('[S4S] Analysis interval stopped - streaming analysis:', isStreamingAnalysis, 'all posts processed:', allPostsProcessed);
+        return;
+      }
+      
+      await extractAndAnalyzePostsStreaming(tabId, statusDiv, resultsDiv);
+    }, 5000); // Check for new posts every 5 seconds (slower to be gentler)
+    
+    // Start frequent metrics updates
+    metricsUpdateInterval = setInterval(() => {
+      if (isStreamingAnalysis) {
+        updateMetrics();
+      }
+    }, 500); // Update metrics every 500ms for smooth display
+    
+    return streamingAnalysisInterval;
+  }
+
+  // New: Function to update metrics display
+  function updateMetrics() {
+    const metricsDiv = document.getElementById('metrics');
+    const postsFoundSpan = document.getElementById('postsFound');
+    const postsAnalyzedSpan = document.getElementById('postsAnalyzed');
+    const leadsFoundSpan = document.getElementById('leadsFound');
+    const analysisStatusSpan = document.getElementById('analysisStatus');
+    
+    if (metricsDiv && postsFoundSpan && postsAnalyzedSpan && leadsFoundSpan && analysisStatusSpan) {
+      postsFoundSpan.textContent = totalPostCount;
+      postsAnalyzedSpan.textContent = processedPostCount;
+      leadsFoundSpan.textContent = streamingLeads.length;
+      
+      if (allPostsProcessed) {
+        analysisStatusSpan.textContent = 'Complete';
+        analysisStatusSpan.style.color = '#28a745';
+      } else if (isStreamingAnalysis) {
+        if (isScrollingActive) {
+          analysisStatusSpan.textContent = `Scrolling & Analyzing (Q:${postQueue.length}, B:${optimalBatchSize})`;
+          analysisStatusSpan.style.color = '#007bff';
+        } else {
+          analysisStatusSpan.textContent = `Analyzing Remaining (Q:${postQueue.length}, B:${optimalBatchSize})`;
+          analysisStatusSpan.style.color = '#ffc107';
+        }
+      } else {
+        analysisStatusSpan.textContent = 'Idle';
+        analysisStatusSpan.style.color = '#6c757d';
+      }
+    }
+  }
+
+  // New: Function to show/hide metrics
+  function showMetrics(show = true) {
+    const metricsDiv = document.getElementById('metrics');
+    if (metricsDiv) {
+      metricsDiv.style.display = show ? 'block' : 'none';
+    }
+  }
+
+  // New: Function to stop streaming analysis
+  function stopStreamingAnalysis() {
+    isStreamingAnalysis = false;
+    isScrollingActive = false; // Also stop scrolling flag
+    if (streamingAnalysisInterval) {
+      clearInterval(streamingAnalysisInterval);
+      streamingAnalysisInterval = null;
+    }
+    if (metricsUpdateInterval) {
+      clearInterval(metricsUpdateInterval);
+      metricsUpdateInterval = null;
+    }
+    console.log('[S4S] Streaming analysis stopped by user');
+    updateMetrics();
+  }
+
+  // New: Function to add posts to the processing queue
+  function addPostsToQueue(newPosts) {
+    for (const post of newPosts) {
+      const postId = post.postUrl || post.linkedinUrl || `${post.name}-${post.content?.substring(0, 50)}`;
+      
+      // Only add if not already in queue and not already processed
+      if (!processedPostIds.has(postId) && !postQueue.some(qPost => {
+        const qPostId = qPost.postUrl || qPost.linkedinUrl || `${qPost.name}-${qPost.content?.substring(0, 50)}`;
+        return qPostId === postId;
+      })) {
+        postQueue.push(post);
+        console.log(`[S4S] Added post to queue: ${post.name} (Queue size: ${postQueue.length})`);
+        // Update metrics when queue size changes
+        updateMetrics();
+      }
+    }
+  }
+
+  // New: Function to process the queue with parallel processing and smart batching
+  async function processQueue(statusDiv, resultsDiv) {
+    if (isProcessingQueue || postQueue.length === 0) {
+      return;
+    }
+    
+    isProcessingQueue = true;
+    console.log(`[S4S] Processing queue with ${postQueue.length} posts using batch size ${optimalBatchSize}`);
+    
+    while (postQueue.length > 0 && isStreamingAnalysis && !allPostsProcessed) {
+      const startTime = Date.now();
+      
+      // Take a batch of posts for parallel processing
+      const batchSize = Math.min(optimalBatchSize, postQueue.length);
+      const batch = postQueue.splice(0, batchSize);
+      
+      console.log(`[S4S] Processing batch of ${batchSize} posts in parallel`);
+      
+      // Process batch in parallel
+      const batchPromises = batch.map(async (post) => {
+        const postId = post.postUrl || post.linkedinUrl || `${post.name}-${post.content?.substring(0, 50)}`;
+        
+        // Mark as processed
+        processedPostIds.add(postId);
+        processedPostCount++;
+        
+        // Update metrics immediately when post count changes
+        updateMetrics();
+        
+        console.log(`[S4S] Processing post ${processedPostCount}/${totalPostCount}: ${post.name}`);
+        
+        try {
+          const result = await analyzeSinglePostStreaming(post, statusDiv);
+          // Update metrics after each post analysis
+          updateMetrics();
+          return result;
+        } catch (error) {
+          console.error(`[S4S] Error processing post ${post.name}:`, error);
+          // Update metrics even on error
+          updateMetrics();
+          return false;
+        }
+      });
+      
+      // Wait for all posts in batch to complete
+      await Promise.all(batchPromises);
+      
+      // Update status and metrics
+      statusDiv.textContent = `Analyzed ${processedPostCount}/${totalPostCount} posts (Batch: ${batchSize})`;
+      updateMetrics();
+      
+      // Calculate processing time and adjust batch size
+      const processingTime = Date.now() - startTime;
+      lastProcessingTime = processingTime;
+      
+      // Smart batch size adjustment
+      if (processingTime < 2000 && optimalBatchSize < 5) {
+        optimalBatchSize++;
+        console.log(`[S4S] Increasing batch size to ${optimalBatchSize} (processing time: ${processingTime}ms)`);
+      } else if (processingTime > 5000 && optimalBatchSize > 1) {
+        optimalBatchSize--;
+        console.log(`[S4S] Decreasing batch size to ${optimalBatchSize} (processing time: ${processingTime}ms)`);
+      }
+      
+      // Longer delay between batches to be gentler on Ollama
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    isProcessingQueue = false;
+    
+    // Only complete if user explicitly stopped the analysis
+    if (!isStreamingAnalysis) {
+      console.log('[S4S] User stopped analysis, completing');
+      handleAnalysisComplete(statusDiv, resultsDiv);
+    }
+  }
+
+  // New: Function to handle completion of all analysis
+  function handleAnalysisComplete(statusDiv, resultsDiv) {
+    allPostsProcessed = true;
+    isStreamingAnalysis = false; // Stop the streaming analysis flag
+    updateMetrics();
+    
+    if (streamingLeads.length > 0) {
+      statusDiv.textContent = `Analysis complete! Found ${streamingLeads.length} leads! Click "Download Leads as CSV" to export.`;
+      resultsDiv.innerHTML = `<div style="background: #e3f2fd; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 12px; color: #1976d2; border-left: 4px solid #2196f3;">Analysis complete! Found ${streamingLeads.length} leads. Use the download buttons to export results.</div>`;
+    } else {
+      statusDiv.textContent = 'Analysis complete. No leads found.';
+    }
+    
+    // Stop the analysis interval
+    if (streamingAnalysisInterval) {
+      clearInterval(streamingAnalysisInterval);
+      streamingAnalysisInterval = null;
+    }
+    
+    // Stop the metrics update interval
+    if (metricsUpdateInterval) {
+      clearInterval(metricsUpdateInterval);
+      metricsUpdateInterval = null;
+    }
+    
+    console.log('[S4S] Analysis completely stopped and interval cleared');
+  }
+
+  // Function to export leads to CSV
   function exportLeadsToCSV(leads) {
     if (!leads || !leads.length) {
       alert('No leads to export!');
@@ -816,6 +1124,74 @@ RESPONSE:`;
     const a = document.createElement('a');
     a.href = url;
     a.download = `linkedin_leads_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // Function to export all analyzed posts to CSV for review
+  function exportAllPostsToCSV() {
+    if (!allAnalyzedPosts || !allAnalyzedPosts.length) {
+      alert('No analyzed posts to export!');
+      return;
+    }
+    
+    const header = [
+      'Name', 
+      'Headline', 
+      'Is Hiring', 
+      'Title', 
+      'Company', 
+      'Connection Degree', 
+      'Post URL', 
+      'Profile URL', 
+      'Post Date', 
+      'Post Content',
+      'Analysis Error',
+      'Analyzed At'
+    ];
+    
+    function escapeCSVField(field) {
+      if (field === null || field === undefined) return '';
+      const str = String(field);
+      
+      // Handle emojis and special characters
+      let cleanedStr = str
+        .replace(/\r\n/g, ' ') // Replace newlines with spaces for CSV
+        .replace(/\r/g, ' ')
+        .replace(/\n/g, ' ')
+        .replace(/\s{2,}/g, ' ') // Remove multiple spaces
+        .trim();
+      
+      if (cleanedStr.includes(',') || cleanedStr.includes('"') || cleanedStr.includes('\n') || cleanedStr.includes('\r')) {
+        return '"' + cleanedStr.replace(/"/g, '""') + '"';
+      }
+      return cleanedStr;
+    }
+    
+    // Map each analyzed post to CSV row
+    const rows = allAnalyzedPosts.map(post => [
+      escapeCSVField(post.name || ''),
+      escapeCSVField(post.headline || ''),
+      escapeCSVField(post.isHiring ? 'YES' : 'NO'),
+      escapeCSVField(post.title || ''),
+      escapeCSVField(post.company || ''),
+      escapeCSVField(post.connection_degree || post.connectionDegree || '3rd'),
+      escapeCSVField(post.posturl || post.postUrl || ''),
+      escapeCSVField(post.profileurl || post.linkedin_profile_url || post.linkedinUrl || ''),
+      escapeCSVField(post.post_date || post.postDate || ''),
+      escapeCSVField(post.post_content || post.content || ''),
+      escapeCSVField(post.analysisError || ''),
+      escapeCSVField(post.analyzedAt || '')
+    ]);
+    
+    const csvContent = [header, ...rows].map(e => e.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `linkedin_all_posts_analysis_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

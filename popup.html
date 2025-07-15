@@ -87,6 +87,12 @@
       cursor: not-allowed;
       transform: none;
     }
+    .stop-analysis-btn {
+      background: linear-gradient(135deg, #fd7e14 0%, #e55a00 100%) !important;
+    }
+    .stop-analysis-btn:hover:enabled {
+      background: linear-gradient(135deg, #e55a00 0%, #cc4a00 100%) !important;
+    }
     #status {
       background: #e3f2fd;
       padding: 10px;
@@ -96,20 +102,7 @@
       color: #1976d2;
       border-left: 4px solid #2196f3;
     }
-    .json-display {
-      background: #f8f9fa;
-      border: 1px solid #e9ecef;
-      border-radius: 8px;
-      padding: 15px;
-      margin: 15px 0;
-      max-height: 400px;
-      overflow-y: auto;
-      font-family: 'Courier New', monospace;
-      font-size: 11px;
-      line-height: 1.4;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-    }
+
     .download-btn {
       background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
       margin-top: 10px;
@@ -195,9 +188,34 @@
   </div>
   <div class="content">
     <div class="scroll-controls">
-      <button id="startScroll" class="start-btn">Start Scrolling</button>
+      <button id="startScroll" class="start-btn">Start Scrolling & Analysis</button>
       <button id="stopScroll" class="stop-btn" disabled>Stop Scrolling</button>
+      <button id="stopAnalysis" class="stop-analysis-btn" disabled>Stop Analysis Only</button>
     </div>
+    
+    <!-- New: Live Metrics Section -->
+    <div id="metrics" style="display: none; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 15px; margin: 15px 0; font-family: 'Courier New', monospace; font-size: 12px;">
+      <div style="font-weight: bold; margin-bottom: 10px; color: #495057;">Live Metrics</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <div>
+          <span style="color: #6c757d;">Posts Found:</span>
+          <span id="postsFound" style="font-weight: bold; color: #007bff;">0</span>
+        </div>
+        <div>
+          <span style="color: #6c757d;">Posts Analyzed:</span>
+          <span id="postsAnalyzed" style="font-weight: bold; color: #28a745;">0</span>
+        </div>
+        <div>
+          <span style="color: #6c757d;">Leads Found:</span>
+          <span id="leadsFound" style="font-weight: bold; color: #dc3545;">0</span>
+        </div>
+        <div>
+          <span style="color: #6c757d;">Analysis Status:</span>
+          <span id="analysisStatus" style="font-weight: bold; color: #ffc107;">Idle</span>
+        </div>
+      </div>
+    </div>
+    
     <div class="section-divider"></div>
     <div class="controls" id="controls"></div>
     <div class="section-divider"></div>
