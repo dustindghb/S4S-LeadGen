@@ -241,7 +241,7 @@ RESPONSE: Return ONLY "YES" or "NO"`;
           top_k: 1,               // Only consider top token
           top_p: 0.1,             // Lower for faster sampling
           repeat_penalty: 1.0,     // Minimal penalty
-          num_ctx: 512            // Smaller context window
+          num_ctx: 4096           // Increased context window for longer posts
         }
       }
     });
@@ -311,7 +311,7 @@ JSON:`;
           top_k: 1,               // Only consider top token
           top_p: 0.1,             // Lower for faster sampling
           repeat_penalty: 1.0,     // Minimal penalty
-          num_ctx: 512            // Smaller context window
+          num_ctx: 4096           // Increased context window for longer posts
         }
       }
     });
