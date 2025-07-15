@@ -1,36 +1,4 @@
-// Default prompt for lead finding
-const DEFAULT_PROMPT = `SYSTEM: You are a JSON-only response bot. You must return ONLY valid JSON. No text, no analysis, no explanations.
 
-TASK: Filter the LinkedIn posts below and return ONLY posts that contain hiring-related keywords.
-
-HIRING KEYWORDS TO LOOK FOR:
-- "hiring", "we're hiring", "looking to hire", "hiring for"
-- "recruiting", "recruiter", "recruitment"
-- "job opportunity", "open position", "job opening", "position available"
-- "join our team", "we're looking for", "apply now", "apply today"
-- "career opportunity", "employment", "job posting"
-
-OUTPUT FORMAT - RETURN ONLY THIS JSON STRUCTURE:
-[
-  {
-    "name": "exact name from post",
-    "headline": "exact headline from post",
-    "linkedin_profile_url": "exact URL from post", 
-    "age": "exact age from post",
-    "message": "exact message from post",
-    "hiring_reason": "keyword found: [specific keyword]"
-  }
-]
-
-RULES:
-1. Return ONLY the JSON array above
-2. No text before or after the JSON
-3. No analysis, categorization, or explanations
-4. If no hiring posts found, return: []
-5. Copy exact values from the original posts
-
-LinkedIn Posts Data:
-{data}`;
 
 // Helper to get the most recently active LinkedIn tab
 async function getMostRecentLinkedInTab() {
@@ -221,12 +189,38 @@ async function ensureContentScriptInjected() {
 
   // Function to check if a single post is about hiring
   async function checkIfPostIsHiring(post) {
-    // Simplified prompt with only essential information
-    const hiringPrompt = `SYSTEM: You are a hiring post classifier. Return ONLY "YES" or "NO".
+    const HIRING_CLASSIFIER_PROMPT = `SYSTEM: You are a hiring post classifier. Return ONLY "YES" or "NO".
 
-TASK: Determine if this LinkedIn post is about hiring, recruiting, job opportunities, or employment.
+TASK: Determine if this LinkedIn post is from someone actively HIRING others (not seeking employment themselves).
 
-HIRING KEYWORDS: hiring, recruiting, job opportunity, open position, join our team, apply now, career opportunity, employment
+CRITICAL RULES:
+- Return "YES" ONLY if the author is OFFERING employment/work to others
+- Return "NO" if someone is seeking employment for themselves
+- Return "NO" if "hiring" is mentioned casually without intent to hire
+
+EMPLOYER HIRING SIGNALS (return "YES"):
+- "We are hiring", "We're hiring", "My company is hiring"
+- "Looking to hire", "Hiring for [role]", "Actively hiring"
+- "Join our team", "We're looking for", "We need"
+- "Open position", "Job opening", "Position available"
+- "Apply now", "Send your resume", "Interested candidates"
+- "Recruiting", "Now hiring", "Talent acquisition"
+- "Contract opportunity", "Freelance opportunity", "Project needs"
+- "Anyone available for", "Know someone who", "Recommendations for a [role]"
+
+JOB SEEKER SIGNALS (return "NO"):
+- "I am looking for", "I'm seeking", "I need a job"
+- "Available for hire", "Open to opportunities", "Seeking employment"
+- "Looking for work", "Job hunting", "Recently laid off"
+- "My resume", "Hire me", "I'm interested in"
+- "Does anyone know of", "Any openings", "Help me find"
+- "I have experience in", "I can help with", "I specialize in"
+
+CASUAL MENTIONS (return "NO"):
+- General discussion about hiring trends
+- Career advice about hiring processes
+- News articles mentioning hiring
+- Posts about being hired (past tense)
 
 POST CONTENT: ${post.content || post.message || ''}
 POST HEADLINE: ${post.headline || ''}
@@ -239,7 +233,7 @@ RESPONSE: Return ONLY "YES" or "NO"`;
       method: 'POST',
       body: {
         model: 'gemma3:12b', // Use the correct model name
-        prompt: hiringPrompt,
+        prompt: HIRING_CLASSIFIER_PROMPT,
         stream: false,
         options: {
           temperature: 0.1, // Lower temperature for more consistent results

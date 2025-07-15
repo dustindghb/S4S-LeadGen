@@ -294,6 +294,7 @@ if (window.s4sContentScriptLoaded) {
         ];
         
         let content = '';
+        let contentFilteredReason = '';
         for (const selector of contentSelectors) {
           const contentElem = post.querySelector(selector);
           if (contentElem && contentElem.innerText.trim()) {
@@ -307,8 +308,15 @@ if (window.s4sContentScriptLoaded) {
                 !text.includes('3rd+')) {
               content = cleanTextContent(text);
               break;
+            } else {
+              contentFilteredReason = `Filtered out by length/keywords (length: ${text.length}, text: '${text.slice(0, 40)}...')`;
+              console.log(`[S4S] Post ${index + 1} content found but filtered:`, contentFilteredReason);
             }
           }
+        }
+        // Debug log if content is still empty after all selectors
+        if (!content) {
+          console.log(`[S4S] Post ${index + 1} content is empty after all selectors.`, contentFilteredReason, 'Post outerHTML:', post.outerHTML.slice(0, 1000));
         }
         
         // Clean headline text as well

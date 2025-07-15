@@ -202,42 +202,44 @@
     <div class="controls" id="controls"></div>
     <div class="section-divider"></div>
     <div class="lead-finder" style="margin: 15px 0;">
-      <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Lead Finding Prompt:</label>
-      <pre style="white-space: pre-wrap; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 10px; font-size: 12px; margin: 0;">SYSTEM: You are a JSON-only response bot. You must return ONLY valid JSON. No text, no analysis, no explanations.
+      <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Hiring Classifier Prompt:</label>
+      <pre style="white-space: pre-wrap; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 10px; font-size: 12px; margin: 0;">SYSTEM: You are a hiring post classifier. Return ONLY "YES" or "NO".
 
-TASK: Filter the LinkedIn posts below and return ONLY posts that contain hiring-related keywords.
+TASK: Determine if this LinkedIn post is from someone actively HIRING others (not seeking employment themselves).
 
-HIRING KEYWORDS TO LOOK FOR:
-- "hiring", "we're hiring", "looking to hire", "hiring for"
-- "recruiting", "recruiter", "recruitment"
-- "job opportunity", "open position", "job opening", "position available"
-- "join our team", "we're looking for", "apply now", "apply today"
-- "career opportunity", "employment", "job posting"
+CRITICAL RULES:
+- Return "YES" ONLY if the author is OFFERING employment/work to others
+- Return "NO" if someone is seeking employment for themselves
+- Return "NO" if "hiring" is mentioned casually without intent to hire
 
-OUTPUT FORMAT - RETURN ONLY THIS JSON STRUCTURE:
-[
-  {
-    "name": "exact name from post",
-    "headline": "exact headline from post",
-    "post_url": "exact post URL from post",
-    "linkedin_profile_url": "exact profile URL from post", 
-    "age": "exact age from post",
-    "post_date": "exact post date (YYYY-MM-DD)",
-    "exact_date": true/false (whether date was exact or calculated),
-    "post_content": "exact post content from post",
-    "hiring_reason": "keyword found: [specific keyword]"
-  }
-]
+EMPLOYER HIRING SIGNALS (return "YES"):
+- "We are hiring", "We're hiring", "My company is hiring"
+- "Looking to hire", "Hiring for [role]", "Actively hiring"
+- "Join our team", "We're looking for", "We need"
+- "Open position", "Job opening", "Position available"
+- "Apply now", "Send your resume", "Interested candidates"
+- "Recruiting", "Now hiring", "Talent acquisition"
+- "Contract opportunity", "Freelance opportunity", "Project needs"
+- "Anyone available for", "Know someone who", "Recommendations for a [role]"
 
-RULES:
-1. Return ONLY the JSON array above
-2. No text before or after the JSON
-3. No analysis, categorization, or explanations
-4. If no hiring posts found, return: []
-5. Copy exact values from the original posts
+JOB SEEKER SIGNALS (return "NO"):
+- "I am looking for", "I'm seeking", "I need a job"
+- "Available for hire", "Open to opportunities", "Seeking employment"
+- "Looking for work", "Job hunting", "Recently laid off"
+- "My resume", "Hire me", "I'm interested in"
+- "Does anyone know of", "Any openings", "Help me find"
+- "I have experience in", "I can help with", "I specialize in"
 
-LinkedIn Posts Data:
-{data}</pre>
+CASUAL MENTIONS (return "NO"):
+- General discussion about hiring trends
+- Career advice about hiring processes
+- News articles mentioning hiring
+- Posts about being hired (past tense)
+
+POST CONTENT: [post content]
+POST HEADLINE: [post headline]
+
+RESPONSE: Return ONLY "YES" or "NO"</pre>
     </div>
     <div class="section-divider"></div>
     <div id="results"></div>
