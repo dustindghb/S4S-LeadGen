@@ -36,8 +36,8 @@ if (window.s4sContentScriptLoaded) {
         }
       }
       
-      // Limit processing to prevent hanging
-      const maxPosts = Math.min(foundPosts.length, 50); // Process max 50 posts at once
+      // Process all found posts (removed 50 post limit)
+      const maxPosts = foundPosts.length;
       
       for (let index = 0; index < maxPosts; index++) {
         const post = foundPosts[index];
@@ -294,6 +294,7 @@ if (window.s4sContentScriptLoaded) {
         ];
         
         let content = '';
+        let contentFilteredReason = '';
         for (const selector of contentSelectors) {
           const contentElem = post.querySelector(selector);
           if (contentElem && contentElem.innerText.trim()) {
@@ -307,8 +308,15 @@ if (window.s4sContentScriptLoaded) {
                 !text.includes('3rd+')) {
               content = cleanTextContent(text);
               break;
+            } else {
+              contentFilteredReason = `Filtered out by length/keywords (length: ${text.length}, text: '${text.slice(0, 40)}...')`;
+              console.log(`[S4S] Post ${index + 1} content found but filtered:`, contentFilteredReason);
             }
           }
+        }
+        // Debug log if content is still empty after all selectors
+        if (!content) {
+          console.log(`[S4S] Post ${index + 1} content is empty after all selectors.`, contentFilteredReason, 'Post outerHTML:', post.outerHTML.slice(0, 1000));
         }
         
         // Clean headline text as well
@@ -973,22 +981,32 @@ if (window.s4sContentScriptLoaded) {
   let shouldStopScrolling = false;
   let scrollTimeoutId = null;
 
-  async function scrollToAbsoluteBottom() {
-    console.log('[S4S] Starting scroll to bottom');
+  async function smoothScrollFeed() {
+    console.log('[S4S] Starting continuous 5px/s scroll');
     isScrolling = true;
     shouldStopScrolling = false;
     
     let lastHeight = document.documentElement.scrollHeight;
     let stuckCount = 0;
-    const maxStuckCount = 3;
-    const maxScrollTime = 60000; // 1 minute maximum scroll time
+    const maxStuckCount = 20; // Be very patient with LinkedIn
+    const maxScrollTime = 300000; // 5 minutes maximum scroll time
     const startTime = Date.now();
+    
+    // Constant rate scroll settings
+    const pixelsPerSecond = 400; // Fast scroll rate: 400 pixels per second
+    const scrollInterval = 1000; // Update every 1 second
+    const pixelsPerScroll = Math.floor(pixelsPerSecond / (1000 / scrollInterval)); // 400 pixels per second
+    
+    console.log('[S4S] Scroll settings - pixels per second:', pixelsPerSecond, 'interval:', scrollInterval, 'ms, pixels per scroll:', pixelsPerScroll);
+    
+    // Track absolute scroll position to maintain constant rate
+    let targetScrollY = window.scrollY;
     
     try {
       while (!shouldStopScrolling) {
         // Check timeout
         if (Date.now() - startTime > maxScrollTime) {
-          console.log('[S4S] Scroll timeout reached');
+          console.log('[S4S] Scroll timeout reached after', Math.round((Date.now() - startTime) / 1000), 'seconds');
           break;
         }
         
@@ -998,33 +1016,33 @@ if (window.s4sContentScriptLoaded) {
           break;
         }
         
-        // Scroll to bottom
-        window.scrollTo(0, document.documentElement.scrollHeight);
-        console.log('[S4S] Scrolled to height:', document.documentElement.scrollHeight);
+        // Calculate next target position (constant rate)
+        targetScrollY += pixelsPerScroll;
         
-        // Wait for LinkedIn to load more content - with shorter timeout
-        await new Promise(resolve => {
-          scrollTimeoutId = setTimeout(resolve, 2000);
-        });
+        // Scroll to absolute position
+        window.scrollTo(0, targetScrollY);
         
-        // Check if we should stop again after waiting
-        if (shouldStopScrolling) {
-          console.log('[S4S] Stopping scroll after wait');
-          break;
-        }
+        console.log('[S4S] Scrolled to position:', targetScrollY, 'pixels');
         
-        let newHeight = document.documentElement.scrollHeight;
-        if (newHeight === lastHeight) {
-          stuckCount++;
-          console.log('[S4S] No new content loaded, stuck count:', stuckCount);
-          if (stuckCount >= maxStuckCount) {
-            console.log('[S4S] Max stuck count reached, stopping scroll');
-            break;
+        // Wait for the interval
+        await new Promise(resolve => setTimeout(resolve, scrollInterval));
+        
+        // Check for new content every few seconds
+        if (Date.now() % 5000 < scrollInterval) { // Check every ~5 seconds
+          let newHeight = document.documentElement.scrollHeight;
+          if (newHeight === lastHeight) {
+            stuckCount++;
+            console.log('[S4S] No new content loaded, stuck count:', stuckCount, 'of', maxStuckCount);
+            if (stuckCount >= maxStuckCount) {
+              console.log('[S4S] Max stuck count reached, stopping scroll');
+              break;
+            }
+          } else {
+            stuckCount = 0;
+            console.log('[S4S] New content loaded, height changed from', lastHeight, 'to', newHeight);
           }
-        } else {
-          stuckCount = 0;
+          lastHeight = newHeight;
         }
-        lastHeight = newHeight;
       }
     } catch (error) {
       console.error('[S4S] Error during scrolling:', error);
@@ -1097,7 +1115,7 @@ if (window.s4sContentScriptLoaded) {
       if (msg.action === "performSingleScroll") {
         console.log('[S4S] Starting performSingleScroll');
         
-        withTimeout(scrollToAbsoluteBottom(), 65000)
+        withTimeout(smoothScrollFeed(), 300000) // Increased from 65s to 5 minutes
           .then(() => {
             console.log('[S4S] Scroll completed, sending response');
             sendResponse({ success: true, stopped: shouldStopScrolling });
