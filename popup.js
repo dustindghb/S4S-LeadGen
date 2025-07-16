@@ -84,24 +84,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // Update the "Hiring Leads Found" display
           updateHiringLeadsDisplay();
           
-          // Save to storage for new leads (CSV download will happen at the end)
+          // Save to storage and download CSV for new leads
           if (hiringPosts.length > 0) {
             saveLeadsToStorage(hiringPosts, statusDiv).then(() => {
-              console.log(`[S4S] Real-time: Saved ${hiringPosts.length} new leads to storage`);
+              exportLeadsToCSV(hiringPosts);
+              console.log(`[S4S] Real-time: Saved ${hiringPosts.length} new leads and downloaded CSV`);
             }).catch(error => {
-              console.error('[S4S] Error in real-time save:', error);
+              console.error('[S4S] Error in real-time save/download:', error);
             });
           }
           
           // Update status with hiring leads count
           if (statusDiv) {
             statusDiv.textContent = `Streaming: Found ${streamedPosts.length} posts, ${allHiringLeads.length} hiring leads so far...`;
-          }
-          
-          // Check if we should trigger final CSV download (when streaming stops and all posts analyzed)
-          if (metrics.isStreamingActive === false && allHiringLeads.length > 0) {
-            console.log('[S4S] Streaming stopped and we have hiring leads, triggering final CSV download');
-            triggerFinalCSVDownload(allHiringLeads, statusDiv);
           }
         }
       }).catch(error => {
@@ -110,53 +105,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   }
 });
-
-// Function to trigger final CSV download with title/company extraction
-async function triggerFinalCSVDownload(leads, statusDiv) {
-  try {
-    console.log('[S4S] Starting final CSV download process with', leads.length, 'leads');
-    statusDiv.textContent = `Processing ${leads.length} hiring leads with title/company extraction...`;
-    
-    // Process all hiring leads with title/company extraction
-    const finalEnrichedLeads = [];
-    for (let i = 0; i < leads.length; i++) {
-      const lead = leads[i];
-      statusDiv.textContent = `Extracting title/company from lead ${i + 1}/${leads.length}...`;
-      
-      try {
-        const titleCompanyData = await extractTitleAndCompany(lead);
-        finalEnrichedLeads.push({
-          ...lead,
-          title: titleCompanyData.title,
-          company: titleCompanyData.company
-        });
-      } catch (error) {
-        console.error(`[S4S] Error extracting title/company from lead ${i + 1}:`, error);
-        // Add lead with fallback values
-        finalEnrichedLeads.push({
-          ...lead,
-          title: 'Unknown Title',
-          company: 'Unknown Company'
-        });
-      }
-    }
-    
-    // Save final enriched leads and download CSV once
-    await saveLeadsToStorage(finalEnrichedLeads, statusDiv);
-    console.log('[S4S] About to download CSV with', finalEnrichedLeads.length, 'leads');
-    try {
-      exportLeadsToCSV(finalEnrichedLeads);
-      console.log('[S4S] CSV download completed successfully');
-      statusDiv.textContent = `✅ Complete! Found ${finalEnrichedLeads.length} hiring leads with title/company data. CSV downloaded.`;
-    } catch (error) {
-      console.error('[S4S] Error downloading CSV:', error);
-      statusDiv.textContent = `✅ Complete! Found ${finalEnrichedLeads.length} hiring leads with title/company data. CSV download failed: ${error.message}`;
-    }
-  } catch (error) {
-    console.error('[S4S] Error in final CSV download process:', error);
-    statusDiv.textContent = `Error in final CSV download: ${error.message}`;
-  }
-}
 
 // Function to update the "All Posts Being Read" display
 function updateAllPostsDisplay() {
@@ -740,15 +688,18 @@ async function analyzeStreamedPosts(posts, statusDiv) {
       }
     }
     
-    // If we found hiring posts, save them to storage (CSV download will happen at the end)
+    // If we found hiring posts, save them to storage and download CSV
     if (hiringPosts.length > 0) {
       try {
         // Save to storage
         await saveLeadsToStorage(hiringPosts, statusDiv);
         
-        console.log(`[S4S] Automatically saved ${hiringPosts.length} leads to storage`);
+        // Download CSV automatically
+        exportLeadsToCSV(hiringPosts);
+        
+        console.log(`[S4S] Automatically saved ${hiringPosts.length} leads to storage and downloaded CSV`);
       } catch (error) {
-        console.error('[S4S] Error saving leads:', error);
+        console.error('[S4S] Error saving leads or downloading CSV:', error);
       }
     }
     
@@ -799,16 +750,6 @@ async function analyzeStreamedPosts(posts, statusDiv) {
     const downloadSection = document.getElementById('download-section');
     let statusDiv = document.getElementById('status');
     const resultsDiv = document.getElementById('results');
-
-    // Test if exportLeadsToCSV function is available
-    if (typeof window.exportLeadsToCSV !== 'function') {
-      console.error('[S4S] exportLeadsToCSV function is not available!');
-      if (statusDiv) {
-        statusDiv.textContent = 'Error: CSV export function not loaded. Please refresh the extension.';
-      }
-    } else {
-      console.log('[S4S] exportLeadsToCSV function is available');
-    }
 
     // Fallback: create statusDiv if missing
     if (!statusDiv) {
@@ -947,10 +888,11 @@ async function analyzeStreamedPosts(posts, statusDiv) {
             updateAllPostsDisplay();
             updateHiringLeadsDisplay();
             
-            // Trigger final CSV download if we have hiring leads
+            // Final CSV download if we have hiring leads (in case some weren't processed during streaming)
             if (allHiringLeads.length > 0) {
-              console.log('[S4S] Streaming stopped with hiring leads, triggering final CSV download');
-              await triggerFinalCSVDownload(allHiringLeads, statusDiv);
+              statusDiv.textContent = `Found ${streamedPosts.length} posts, ${allHiringLeads.length} hiring leads. Final CSV download...`;
+              exportLeadsToCSV(allHiringLeads);
+              statusDiv.textContent = `✅ Complete! Found ${allHiringLeads.length} hiring leads. CSV downloaded.`;
             } else {
               statusDiv.textContent = `Found ${streamedPosts.length} posts, but no hiring leads found.`;
             }
@@ -1108,14 +1050,7 @@ async function analyzeStreamedPosts(posts, statusDiv) {
         const jsonString = JSON.stringify(enrichedPosts, null, 2);
         resultsDiv.innerHTML = `<div class="json-display">${jsonString}</div>`;
         if (enrichedPosts.length > 0) {
-          console.log('[S4S] About to download CSV with', enrichedPosts.length, 'leads from Find Leads button');
-          try {
-            exportLeadsToCSV(enrichedPosts);
-            console.log('[S4S] CSV download completed successfully from Find Leads button');
-          } catch (error) {
-            console.error('[S4S] Error downloading CSV from Find Leads button:', error);
-            statusDiv.textContent = `Found ${enrichedPosts.length} hiring-related posts with title/company data! CSV download failed: ${error.message}`;
-          }
+          exportLeadsToCSV(enrichedPosts);
         }
       } catch (error) {
         console.error('[S4S] Analysis failed:', error);
@@ -1128,5 +1063,60 @@ async function analyzeStreamedPosts(posts, statusDiv) {
     });
   });
 
-  // Use the global exportLeadsToCSV function from exportExcel.js
-  // The function is already available globally from the exportExcel.js script
+  // Remove Excel export logic and add CSV export logic
+  function exportLeadsToCSV(leads) {
+    if (!leads || !leads.length) {
+      alert('No leads to export!');
+      return;
+    }
+    // Updated columns to include title, company, connection degree, post URL and post date
+    const headerKeys = [
+      'name',
+      'title',
+      'company',
+      'connection_degree',
+      'posturl',
+      'profileurl',
+      'post_date',
+      'post_content'
+    ];
+    const header = ['Name', 'Title', 'Company', 'Connection Degree', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
+    function escapeCSVField(field) {
+      if (field === null || field === undefined) return '';
+      const str = String(field);
+      
+      // Handle emojis and special characters
+      let cleanedStr = str
+        .replace(/\r\n/g, ' ') // Replace newlines with spaces for CSV
+        .replace(/\r/g, ' ')
+        .replace(/\n/g, ' ')
+        .replace(/\s{2,}/g, ' ') // Remove multiple spaces
+        .trim();
+      
+      if (cleanedStr.includes(',') || cleanedStr.includes('"') || cleanedStr.includes('\n') || cleanedStr.includes('\r')) {
+        return '"' + cleanedStr.replace(/"/g, '""') + '"';
+      }
+      return cleanedStr;
+    }
+    // Map each lead to the correct keys, with fallback for profileurl, post_content, and posturl
+    const rows = leads.map(lead => [
+      escapeCSVField(lead.name || ''),
+      escapeCSVField(lead.title || 'Unknown Title'),
+      escapeCSVField(lead.company || 'Unknown Company'),
+      escapeCSVField(lead.connection_degree || lead.connectionDegree || '3rd'),
+      escapeCSVField(lead.posturl || lead.postUrl || ''),
+      escapeCSVField(lead.profileurl || lead.linkedin_profile_url || lead.linkedinUrl || ''),
+      escapeCSVField(lead.post_date || lead.postDate || ''),
+      escapeCSVField(lead.post_content || lead.content || '')
+    ]);
+    const csvContent = [header, ...rows].map(e => e.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `linkedin_leads_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
