@@ -3,10 +3,11 @@
     "name": "LinkedIn Feed Reader",
     "version": "1.0",
     "description": "Extracts name, company, and post content from LinkedIn home feed.",
-    "permissions": ["scripting", "activeTab"],
+    "permissions": ["scripting", "activeTab", "storage"],
     "host_permissions": [
       "https://www.linkedin.com/*",
-      "http://localhost:11435/*"
+      "http://localhost:11435/*",
+      "https://api.openai.com/*"
     ],
     "background": {
       "service_worker": "background.js"

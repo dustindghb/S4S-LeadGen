@@ -41,8 +41,15 @@ The extension now shows live metrics during analysis:
 
 ### Requirements
 
+**For Ollama (Local):**
 - Ollama running locally on port 11435
 - A model like `gemma3:12b` installed in Ollama
+
+**For OpenAI (Cloud):**
+- OpenAI API key
+- Internet connection
+
+**General:**
 - LinkedIn page open in a browser tab
 
 ### Usage
@@ -55,3 +62,81 @@ The extension now shows live metrics during analysis:
 6. Click "Download Leads as CSV" to export results
 
 The extension automatically saves leads to browser storage, so you can download them later even if you close the popup.
+
+## AI Provider Configuration
+
+You can choose between two AI providers for post analysis:
+
+### Ollama (Local)
+- **Free**: Runs locally on your machine
+- **Privacy**: No data sent to external servers
+- **Setup**: Requires Ollama installation and model download
+- **Speed**: Depends on your local hardware
+
+### OpenAI (Cloud)
+- **Cost**: Pay per API call (very affordable for this use case)
+- **Convenience**: No local setup required
+- **Quality**: Generally better accuracy and consistency
+- **Speed**: Fast cloud-based processing
+
+### How to Configure
+
+1. **Select Provider**: Choose between "Ollama (Local)" or "OpenAI (Cloud)"
+2. **For OpenAI**: Enter your API key and select a model
+3. **Save Configuration**: Click "Save OpenAI Config" to store your settings
+4. **Test Connection**: Use "Test Connection" to verify OpenAI setup
+
+### OpenAI Models Available
+
+- **GPT-4o Mini**: Fast and cost-effective (recommended)
+- **GPT-4o**: Best quality but more expensive
+- **GPT-3.5 Turbo**: Fastest but lower quality
+
+### Security Note
+
+Your OpenAI API key is stored locally in your browser's storage and is only used to make API calls to OpenAI. It is never sent to any other servers or stored elsewhere.
+
+## Custom Hiring Classifier Prompt
+
+You can now customize the AI prompt used to classify hiring posts:
+
+### How to Customize
+
+1. **Edit the Prompt**: The textarea in the popup contains the current prompt used by the AI
+2. **Save Changes**: Click "Save Prompt" to permanently save your custom prompt
+3. **Reset to Default**: Click "Reset to Default" to restore the original prompt
+4. **Visual Feedback**: The save button shows an asterisk (*) when changes are unsaved
+
+### Prompt Placeholders
+
+Use these placeholders in your custom prompt:
+- `{post.content || post.message || ''}` - The post content
+- `{post.headline || ''}` - The author's headline/title
+
+### Example Custom Prompt
+
+```
+SYSTEM: You are a hiring post classifier. Return ONLY "YES" or "NO".
+
+TASK: Determine if this LinkedIn post is from someone actively HIRING others.
+
+RETURN "YES" IF:
+- "We are hiring", "Looking for", "Join our team"
+- "Apply now", "Send your resume"
+- "Open position", "Job opening"
+
+RETURN "NO" IF:
+- "I'm looking for work", "Open to opportunities"
+- "Recently laid off", "Job hunting"
+
+POST CONTENT: {post.content || post.message || ''}
+POST HEADLINE: {post.headline || ''}
+
+RESPONSE: Return ONLY "YES" or "NO"
+```
+
+### Prompt Persistence
+
+- Custom prompts are automatically saved to browser storage
+- Your prompt will be loaded when you reopen the extension
+- Changes are permanent until you reset to default

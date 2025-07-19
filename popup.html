@@ -288,6 +288,88 @@
       <div class="section-divider"></div>
       <div class="controls" id="controls"></div>
       <div class="section-divider"></div>
+      <!-- AI Provider Configuration -->
+      <div class="ai-config" style="margin: 15px 0">
+        <label
+          style="
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #333;
+          "
+          >AI Provider:</label
+        >
+        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+          <label style="display: flex; align-items: center; gap: 5px;">
+            <input type="radio" id="ollamaProvider" name="aiProvider" value="ollama" checked>
+            <span>Ollama (Local)</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 5px;">
+            <input type="radio" id="openaiProvider" name="aiProvider" value="openai">
+            <span>OpenAI (Cloud)</span>
+          </label>
+        </div>
+        
+        <!-- OpenAI Configuration -->
+        <div id="openaiConfig" style="display: none; margin-top: 10px;">
+          <label
+            style="
+              display: block;
+              margin-bottom: 5px;
+              font-weight: 500;
+              color: #333;
+            "
+            >OpenAI API Key:</label
+          >
+          <input
+            type="password"
+            id="openaiApiKey"
+            placeholder="sk-..."
+            style="
+              width: 100%;
+              padding: 8px;
+              border: 1px solid #ddd;
+              border-radius: 4px;
+              font-family: monospace;
+              font-size: 12px;
+            "
+          >
+          <div style="margin-top: 5px;">
+            <label
+              style="
+                display: block;
+                margin-bottom: 5px;
+                font-weight: 500;
+                color: #333;
+              "
+              >OpenAI Model:</label
+            >
+            <select
+              id="openaiModel"
+              style="
+                width: 100%;
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-size: 12px;
+              "
+            >
+              <option value="gpt-4o-mini">GPT-4o Mini (Fast & Cheap)</option>
+              <option value="gpt-4o">GPT-4o (Best Quality)</option>
+              <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Fast)</option>
+            </select>
+          </div>
+          <div style="margin-top: 10px;">
+            <button id="saveOpenAIConfig" class="save-prompt-btn" style="width: auto; margin: 0;">
+              Save OpenAI Config
+            </button>
+            <button id="testOpenAI" class="reset-btn" style="width: auto; margin: 0 0 0 10px;">
+              Test Connection
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div class="lead-finder" style="margin: 15px 0">
         <label
           style="
@@ -298,55 +380,23 @@
           "
           >Hiring Classifier Prompt:</label
         >
-        <pre
-          style="
-            white-space: pre-wrap;
-            background: #f8f9fa;
-            border: 1px solid #e9ecef;
-            border-radius: 4px;
-            padding: 10px;
-            font-size: 12px;
-            margin: 0;
-          "
-        >
-SYSTEM: You are a hiring post classifier. Return ONLY "YES" or "NO".
+        <textarea
+          id="classifierPrompt"
+          class="prompt-textarea"
+          placeholder="Enter your custom hiring classifier prompt here...
 
-TASK: Determine if this LinkedIn post is from someone actively HIRING others (not seeking employment themselves).
+IMPORTANT: Use {post.content || post.message || ''} and {post.headline || ''} as placeholders for the post content and headline respectively.
 
-CRITICAL RULES:
-- Return "YES" ONLY if the author is OFFERING employment/work to others
-- Return "NO" if someone is seeking employment for themselves
-- Return "NO" if "hiring" is mentioned casually without intent to hire
+Example:
+POST CONTENT: {post.content || post.message || ''}
+POST HEADLINE: {post.headline || ''}
 
-EMPLOYER HIRING SIGNALS (return "YES"):
-- "We are hiring", "We're hiring", "My company is hiring"
-- "Looking to hire", "Hiring for [role]", "Actively hiring"
-- "Join our team", "We're looking for", "We need"
-- "Open position", "Job opening", "Position available"
-- "Apply now", "Send your resume", "Interested candidates"
-- "Recruiting", "Now hiring", "Talent acquisition"
-- "Contract opportunity", "Freelance opportunity", "Project needs"
-- "Anyone available for", "Know someone who", "Recommendations for a [role]"
-
-JOB SEEKER SIGNALS (return "NO"):
-- "I am looking for", "I'm seeking", "I need a job"
-- "Available for hire", "Open to opportunities", "Seeking employment"
-- "Looking for work", "Job hunting", "Recently laid off"
-- "My resume", "Hire me", "I'm interested in"
-- "Does anyone know of", "Any openings", "Help me find"
-- "I have experience in", "I can help with", "I specialize in"
-
-CASUAL MENTIONS (return "NO"):
-- General discussion about hiring trends
-- Career advice about hiring processes
-- News articles mentioning hiring
-- Posts about being hired (past tense)
-
-POST CONTENT: [post content]
-POST HEADLINE: [post headline]
-
-RESPONSE: Return ONLY "YES" or "NO"</pre
-        >
+The system will automatically replace these placeholders with actual post data when analyzing."
+        ></textarea>
+        <div class="prompt-controls">
+          <button id="savePrompt" class="save-prompt-btn">Save Prompt</button>
+          <button id="resetPrompt" class="reset-btn">Reset to Default</button>
+        </div>
       </div>
       <div class="section-divider"></div>
       <div id="results"></div>

@@ -184,9 +184,8 @@ async function ensureContentScriptInjected() {
     }
   }
 
-  // Function to check if a single post is about hiring
-  async function checkIfPostIsHiring(post) {
-    const HIRING_CLASSIFIER_PROMPT = `SYSTEM: You are a hiring post classifier. Return ONLY "YES" or "NO".
+  // Default hiring classifier prompt
+  const DEFAULT_HIRING_CLASSIFIER_PROMPT = `SYSTEM: You are a hiring post classifier. Return ONLY "YES" or "NO".
 TASK: Determine if this LinkedIn post is from someone actively HIRING others RIGHT NOW.
 
 RETURN "YES" IF THE POST CONTAINS ANY OF THESE HIRING INDICATORS:
@@ -223,35 +222,427 @@ RETURN "NO" FOR ALL OF THESE:
 
 KEY RULE: If the post contains clear hiring language indicating the author/company is actively seeking candidates, return "YES" - even if the post is brief like "We're hiring!"
 
-POST CONTENT: ${post.content || post.message || ''}
-POST HEADLINE: ${post.headline || ''}
+POST CONTENT: {post.content || post.message || ''}
+POST HEADLINE: {post.headline || ''}
 RESPONSE: Return ONLY "YES" or "NO"`;
 
-    const response = await sendMessageToBackground({
-      action: 'ollamaRequest',
-      endpoint: '/api/generate',
-      method: 'POST',
-      body: {
-        model: 'gemma3:12b',
-        prompt: HIRING_CLASSIFIER_PROMPT,
-        stream: false,
-        options: {
-          temperature: 0.0,        // Lower for faster, more consistent responses
-          num_predict: 5,          // Limit response length (just need YES/NO)
-          top_k: 1,               // Only consider top token
-          top_p: 0.1,             // Lower for faster sampling
-          repeat_penalty: 1.0,     // Minimal penalty
-          num_ctx: 4096           // Increased context window for longer posts
-        }
+  // Function to save prompt to storage
+  async function savePromptToStorage(prompt) {
+    return new Promise((resolve) => {
+      console.log('[S4S] Attempting to save prompt to storage');
+      
+      if (typeof chrome === 'undefined') {
+        console.error('[S4S] Chrome object is undefined');
+        resolve(false);
+        return;
+      }
+      
+      if (!chrome.storage) {
+        console.error('[S4S] chrome.storage is not available');
+        resolve(false);
+        return;
+      }
+      
+      if (!chrome.storage.local) {
+        console.error('[S4S] chrome.storage.local is not available, using fallback storage');
+        fallbackStorage.hiringClassifierPrompt = prompt;
+        resolve(true);
+        return;
+      }
+      
+      try {
+        chrome.storage.local.set({ hiringClassifierPrompt: prompt }, () => {
+          if (chrome.runtime.lastError) {
+            console.error('[S4S] Error saving prompt to storage:', chrome.runtime.lastError);
+            console.log('[S4S] Using fallback storage instead');
+            fallbackStorage.hiringClassifierPrompt = prompt;
+            resolve(true);
+          } else {
+            console.log('[S4S] Prompt saved to storage successfully');
+            resolve(true);
+          }
+        });
+      } catch (error) {
+        console.error('[S4S] Exception while saving prompt to storage:', error);
+        console.log('[S4S] Using fallback storage instead');
+        fallbackStorage.hiringClassifierPrompt = prompt;
+        resolve(true);
       }
     });
+  }
+
+  // Function to load prompt from storage
+  async function loadPromptFromStorage() {
+    return new Promise((resolve) => {
+      console.log('[S4S] Attempting to load prompt from storage');
+      
+      if (typeof chrome === 'undefined') {
+        console.error('[S4S] Chrome object is undefined');
+        resolve(DEFAULT_HIRING_CLASSIFIER_PROMPT);
+        return;
+      }
+      
+      if (!chrome.storage) {
+        console.error('[S4S] chrome.storage is not available');
+        resolve(DEFAULT_HIRING_CLASSIFIER_PROMPT);
+        return;
+      }
+      
+      if (!chrome.storage.local) {
+        console.error('[S4S] chrome.storage.local is not available, using fallback storage');
+        resolve(fallbackStorage.hiringClassifierPrompt || DEFAULT_HIRING_CLASSIFIER_PROMPT);
+        return;
+      }
+      
+      try {
+        chrome.storage.local.get(['hiringClassifierPrompt'], (result) => {
+          if (chrome.runtime.lastError) {
+            console.error('[S4S] Error loading prompt from storage:', chrome.runtime.lastError);
+            console.log('[S4S] Using fallback storage instead');
+            resolve(fallbackStorage.hiringClassifierPrompt || DEFAULT_HIRING_CLASSIFIER_PROMPT);
+          } else {
+            const savedPrompt = result.hiringClassifierPrompt;
+            if (savedPrompt) {
+              console.log('[S4S] Loaded saved prompt from storage');
+              resolve(savedPrompt);
+            } else {
+              console.log('[S4S] No saved prompt found, using default');
+              resolve(DEFAULT_HIRING_CLASSIFIER_PROMPT);
+            }
+          }
+        });
+      } catch (error) {
+        console.error('[S4S] Exception while loading prompt from storage:', error);
+        console.log('[S4S] Using fallback storage instead');
+        resolve(fallbackStorage.hiringClassifierPrompt || DEFAULT_HIRING_CLASSIFIER_PROMPT);
+      }
+    });
+  }
+
+  // Function to get the current prompt (either saved or default)
+  async function getCurrentPrompt() {
+    return await loadPromptFromStorage();
+  }
+
+  // Function to save OpenAI configuration to storage
+  async function saveOpenAIConfigToStorage(config) {
+    return new Promise((resolve) => {
+      console.log('[S4S] Attempting to save OpenAI config:', config);
+      console.log('[S4S] Chrome object available:', typeof chrome !== 'undefined');
+      console.log('[S4S] Chrome storage available:', typeof chrome !== 'undefined' && chrome.storage);
+      console.log('[S4S] Chrome storage.local available:', typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local);
+      
+      if (typeof chrome === 'undefined') {
+        console.error('[S4S] Chrome object is undefined');
+        resolve(false);
+        return;
+      }
+      
+      if (!chrome.storage) {
+        console.error('[S4S] chrome.storage is not available');
+        resolve(false);
+        return;
+      }
+      
+      if (!chrome.storage.local) {
+        console.error('[S4S] chrome.storage.local is not available, using fallback storage');
+        fallbackStorage.openaiConfig = config;
+        resolve(true);
+        return;
+      }
+      
+      try {
+        chrome.storage.local.set({ openaiConfig: config }, () => {
+          if (chrome.runtime.lastError) {
+            console.error('[S4S] Error saving to storage:', chrome.runtime.lastError);
+            console.log('[S4S] Using fallback storage instead');
+            fallbackStorage.openaiConfig = config;
+            resolve(true);
+          } else {
+            console.log('[S4S] OpenAI config saved to storage successfully');
+            resolve(true);
+          }
+        });
+      } catch (error) {
+        console.error('[S4S] Exception while saving to storage:', error);
+        console.log('[S4S] Using fallback storage instead');
+        fallbackStorage.openaiConfig = config;
+        resolve(true);
+      }
+    });
+  }
+
+  // Function to load OpenAI configuration from storage
+  async function loadOpenAIConfigFromStorage() {
+    return new Promise((resolve) => {
+      console.log('[S4S] Attempting to load OpenAI config from storage');
+      
+      if (typeof chrome === 'undefined') {
+        console.error('[S4S] Chrome object is undefined');
+        resolve({ apiKey: '', model: 'gpt-4o-mini' });
+        return;
+      }
+      
+      if (!chrome.storage) {
+        console.error('[S4S] chrome.storage is not available');
+        resolve({ apiKey: '', model: 'gpt-4o-mini' });
+        return;
+      }
+      
+      if (!chrome.storage.local) {
+        console.error('[S4S] chrome.storage.local is not available, using fallback storage');
+        resolve(fallbackStorage.openaiConfig || { apiKey: '', model: 'gpt-4o-mini' });
+        return;
+      }
+      
+      try {
+        chrome.storage.local.get(['openaiConfig'], (result) => {
+          if (chrome.runtime.lastError) {
+            console.error('[S4S] Error loading from storage:', chrome.runtime.lastError);
+            console.log('[S4S] Using fallback storage instead');
+            resolve(fallbackStorage.openaiConfig || { apiKey: '', model: 'gpt-4o-mini' });
+          } else {
+            const savedConfig = result.openaiConfig;
+            if (savedConfig) {
+              console.log('[S4S] Loaded saved OpenAI config from storage');
+              resolve(savedConfig);
+            } else {
+              console.log('[S4S] No saved OpenAI config found, using defaults');
+              resolve({ apiKey: '', model: 'gpt-4o-mini' });
+            }
+          }
+        });
+      } catch (error) {
+        console.error('[S4S] Exception while loading from storage:', error);
+        console.log('[S4S] Using fallback storage instead');
+        resolve(fallbackStorage.openaiConfig || { apiKey: '', model: 'gpt-4o-mini' });
+      }
+    });
+  }
+
+  // Function to save AI provider preference to storage
+  async function saveAIProviderToStorage(provider) {
+    return new Promise((resolve) => {
+      console.log('[S4S] Attempting to save AI provider:', provider);
+      
+      if (typeof chrome === 'undefined') {
+        console.error('[S4S] Chrome object is undefined');
+        resolve(false);
+        return;
+      }
+      
+      if (!chrome.storage) {
+        console.error('[S4S] chrome.storage is not available');
+        resolve(false);
+        return;
+      }
+      
+      if (!chrome.storage.local) {
+        console.error('[S4S] chrome.storage.local is not available, using fallback storage');
+        fallbackStorage.aiProvider = provider;
+        resolve(true);
+        return;
+      }
+      
+      try {
+        chrome.storage.local.set({ aiProvider: provider }, () => {
+          if (chrome.runtime.lastError) {
+            console.error('[S4S] Error saving AI provider to storage:', chrome.runtime.lastError);
+            console.log('[S4S] Using fallback storage instead');
+            fallbackStorage.aiProvider = provider;
+            resolve(true);
+          } else {
+            console.log('[S4S] AI provider saved to storage successfully:', provider);
+            resolve(true);
+          }
+        });
+      } catch (error) {
+        console.error('[S4S] Exception while saving AI provider to storage:', error);
+        console.log('[S4S] Using fallback storage instead');
+        fallbackStorage.aiProvider = provider;
+        resolve(true);
+      }
+    });
+  }
+
+  // Function to load AI provider preference from storage
+  async function loadAIProviderFromStorage() {
+    return new Promise((resolve) => {
+      console.log('[S4S] Attempting to load AI provider from storage');
+      
+      if (typeof chrome === 'undefined') {
+        console.error('[S4S] Chrome object is undefined');
+        resolve('ollama');
+        return;
+      }
+      
+      if (!chrome.storage) {
+        console.error('[S4S] chrome.storage is not available');
+        resolve('ollama');
+        return;
+      }
+      
+      if (!chrome.storage.local) {
+        console.error('[S4S] chrome.storage.local is not available, using fallback storage');
+        resolve(fallbackStorage.aiProvider || 'ollama');
+        return;
+      }
+      
+      try {
+        chrome.storage.local.get(['aiProvider'], (result) => {
+          if (chrome.runtime.lastError) {
+            console.error('[S4S] Error loading AI provider from storage:', chrome.runtime.lastError);
+            console.log('[S4S] Using fallback storage instead');
+            resolve(fallbackStorage.aiProvider || 'ollama');
+          } else {
+            const savedProvider = result.aiProvider;
+            if (savedProvider) {
+              console.log('[S4S] Loaded saved AI provider from storage:', savedProvider);
+              resolve(savedProvider);
+            } else {
+              console.log('[S4S] No saved AI provider found, using ollama');
+              resolve('ollama');
+            }
+          }
+        });
+      } catch (error) {
+        console.error('[S4S] Exception while loading AI provider from storage:', error);
+        console.log('[S4S] Using fallback storage instead');
+        resolve(fallbackStorage.aiProvider || 'ollama');
+      }
+    });
+  }
+
+  // Function to send request to OpenAI
+  async function sendMessageToOpenAI(prompt, model = 'gpt-4o-mini') {
+    const config = await loadOpenAIConfigFromStorage();
     
-    if (!response || !response.success) {
-      throw new Error(response?.error || 'Failed to get response from Ollama');
+    if (!config.apiKey) {
+      throw new Error('OpenAI API key not configured. Please enter your API key in the settings.');
+    }
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        max_tokens: 50,
+        temperature: 0.0
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`OpenAI API error: ${response.status} - ${errorData.error?.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    return {
+      success: true,
+      data: {
+        response: data.choices[0]?.message?.content?.trim() || ''
+      }
+    };
+  }
+
+  // Fallback in-memory storage for when chrome.storage is not available
+  const fallbackStorage = {
+    openaiConfig: null,
+    aiProvider: 'ollama',
+    hiringClassifierPrompt: null
+  };
+
+  // Function to get current AI provider
+  async function getCurrentAIProvider() {
+    return await loadAIProviderFromStorage();
+  }
+
+  // Debug function to check storage status
+  function debugStorageStatus() {
+    console.log('[S4S] === Storage Debug Info ===');
+    console.log('[S4S] Chrome object available:', typeof chrome !== 'undefined');
+    console.log('[S4S] Chrome storage available:', typeof chrome !== 'undefined' && chrome.storage);
+    console.log('[S4S] Chrome storage.local available:', typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local);
+    console.log('[S4S] Fallback storage:', fallbackStorage);
+    
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(null, (result) => {
+        console.log('[S4S] All stored data:', result);
+      });
+    }
+  }
+
+  // Function to check if a single post is about hiring
+  async function checkIfPostIsHiring(post) {
+    const currentPrompt = await getCurrentPrompt();
+    
+    // Validate prompt
+    if (!currentPrompt || currentPrompt.trim() === '') {
+      console.error('[S4S] Empty prompt detected, using default');
+      const defaultPrompt = DEFAULT_HIRING_CLASSIFIER_PROMPT
+        .replace('{post.content || post.message || \'\'}', post.content || post.message || '')
+        .replace('{post.headline || \'\'}', post.headline || '');
+      return await sendPromptToAI(defaultPrompt);
     }
     
-    const result = response.data.response.trim().toUpperCase();
-    return result === 'YES';
+    const HIRING_CLASSIFIER_PROMPT = currentPrompt
+      .replace('{post.content || post.message || \'\'}', post.content || post.message || '')
+      .replace('{post.headline || \'\'}', post.headline || '');
+    
+    return await sendPromptToAI(HIRING_CLASSIFIER_PROMPT);
+  }
+
+  // Helper function to send prompt to AI provider (Ollama or OpenAI)
+  async function sendPromptToAI(prompt) {
+    const provider = await getCurrentAIProvider();
+    
+    if (provider === 'openai') {
+      const config = await loadOpenAIConfigFromStorage();
+      const response = await sendMessageToOpenAI(prompt, config.model);
+      
+      if (!response || !response.success) {
+        throw new Error(response?.error || 'Failed to get response from OpenAI');
+      }
+      
+      const result = response.data.response.trim().toUpperCase();
+      return result === 'YES';
+    } else {
+      // Default to Ollama
+      const response = await sendMessageToBackground({
+        action: 'ollamaRequest',
+        endpoint: '/api/generate',
+        method: 'POST',
+        body: {
+          model: 'gemma3:12b',
+          prompt: prompt,
+          stream: false,
+          options: {
+            temperature: 0.0,        // Lower for faster, more consistent responses
+            num_predict: 5,          // Limit response length (just need YES/NO)
+            top_k: 1,               // Only consider top token
+            top_p: 0.1,             // Lower for faster sampling
+            repeat_penalty: 1.0,     // Minimal penalty
+            num_ctx: 4096           // Increased context window for longer posts
+          }
+        }
+      });
+      
+      if (!response || !response.success) {
+        throw new Error(response?.error || 'Failed to get response from Ollama');
+      }
+      
+      const result = response.data.response.trim().toUpperCase();
+      return result === 'YES';
+    }
   }
 
   // Function to extract title and company from a post's headline
@@ -295,33 +686,42 @@ Examples:
 
 JSON:`;
 
-    console.log(`[S4S] Sending prompt to Ollama:`, titleCompanyPrompt);
+    console.log(`[S4S] Sending prompt to AI:`, titleCompanyPrompt);
 
-    const response = await sendMessageToBackground({
-      action: 'ollamaRequest',
-      endpoint: '/api/generate',
-      method: 'POST',
-      body: {
-        model: 'gemma3:12b',
-        prompt: titleCompanyPrompt,
-        stream: false,
-        options: {
-          temperature: 0.0,        // Lower for faster, more consistent responses
-          num_predict: 100,        // Reduced for faster response
-          top_k: 1,               // Only consider top token
-          top_p: 0.1,             // Lower for faster sampling
-          repeat_penalty: 1.0,     // Minimal penalty
-          num_ctx: 4096           // Increased context window for longer posts
+    const provider = await getCurrentAIProvider();
+    let response;
+
+    if (provider === 'openai') {
+      const config = await loadOpenAIConfigFromStorage();
+      response = await sendMessageToOpenAI(titleCompanyPrompt, config.model);
+    } else {
+      // Default to Ollama
+      response = await sendMessageToBackground({
+        action: 'ollamaRequest',
+        endpoint: '/api/generate',
+        method: 'POST',
+        body: {
+          model: 'gemma3:12b',
+          prompt: titleCompanyPrompt,
+          stream: false,
+          options: {
+            temperature: 0.0,        // Lower for faster, more consistent responses
+            num_predict: 100,        // Reduced for faster response
+            top_k: 1,               // Only consider top token
+            top_p: 0.1,             // Lower for faster sampling
+            repeat_penalty: 1.0,     // Minimal penalty
+            num_ctx: 4096           // Increased context window for longer posts
+          }
         }
-      }
-    });
-    
-    if (!response || !response.success) {
-      console.error(`[S4S] Ollama request failed:`, response);
-      throw new Error(response?.error || 'Failed to get response from Ollama');
+      });
     }
     
-    console.log(`[S4S] Ollama response:`, response.data.response);
+    if (!response || !response.success) {
+      console.error(`[S4S] AI request failed:`, response);
+      throw new Error(response?.error || `Failed to get response from ${provider}`);
+    }
+    
+    console.log(`[S4S] ${provider} response:`, response.data.response);
     
     try {
       const result = JSON.parse(response.data.response.trim());
@@ -542,6 +942,275 @@ JSON:`;
 
     // Button state
     let foundLeads = [];
+
+    // Initialize AI provider configuration
+    const ollamaProviderRadio = document.getElementById('ollamaProvider');
+    const openaiProviderRadio = document.getElementById('openaiProvider');
+    const openaiConfigDiv = document.getElementById('openaiConfig');
+    const openaiApiKeyInput = document.getElementById('openaiApiKey');
+    const openaiModelSelect = document.getElementById('openaiModel');
+    const saveOpenAIConfigBtn = document.getElementById('saveOpenAIConfig');
+    const testOpenAIBtn = document.getElementById('testOpenAI');
+
+    // Initialize prompt editing functionality
+    const classifierPromptTextarea = document.getElementById('classifierPrompt');
+    const savePromptBtn = document.getElementById('savePrompt');
+    const resetPromptBtn = document.getElementById('resetPrompt');
+
+    if (!ollamaProviderRadio || !openaiProviderRadio || !openaiConfigDiv || !openaiApiKeyInput || !openaiModelSelect || !saveOpenAIConfigBtn || !testOpenAIBtn) {
+      console.error('[S4S] AI provider configuration elements not found');
+    } else {
+      // Debug storage status on load
+      debugStorageStatus();
+      // Load saved AI provider preference
+      (async () => {
+        try {
+          const savedProvider = await loadAIProviderFromStorage();
+          if (savedProvider === 'openai') {
+            openaiProviderRadio.checked = true;
+            openaiConfigDiv.style.display = 'block';
+          } else {
+            ollamaProviderRadio.checked = true;
+            openaiConfigDiv.style.display = 'none';
+          }
+          console.log('[S4S] Loaded AI provider preference:', savedProvider);
+        } catch (error) {
+          console.error('[S4S] Error loading AI provider preference:', error);
+        }
+      })();
+
+      // Load saved OpenAI configuration
+      (async () => {
+        try {
+          const savedConfig = await loadOpenAIConfigFromStorage();
+          openaiApiKeyInput.value = savedConfig.apiKey || '';
+          openaiModelSelect.value = savedConfig.model || 'gpt-4o-mini';
+          console.log('[S4S] Loaded OpenAI configuration');
+        } catch (error) {
+          console.error('[S4S] Error loading OpenAI configuration:', error);
+        }
+      })();
+
+      // AI provider radio button event listeners
+      ollamaProviderRadio.addEventListener('change', async () => {
+        if (ollamaProviderRadio.checked) {
+          openaiConfigDiv.style.display = 'none';
+          await saveAIProviderToStorage('ollama');
+          statusDiv.textContent = 'Switched to Ollama (Local)';
+        }
+      });
+
+      openaiProviderRadio.addEventListener('change', async () => {
+        if (openaiProviderRadio.checked) {
+          openaiConfigDiv.style.display = 'block';
+          await saveAIProviderToStorage('openai');
+          statusDiv.textContent = 'Switched to OpenAI (Cloud)';
+        }
+      });
+
+      // Save OpenAI configuration button event listener
+      saveOpenAIConfigBtn.addEventListener('click', async () => {
+        try {
+          console.log('[S4S] Starting OpenAI configuration save...');
+          const apiKey = openaiApiKeyInput.value.trim();
+          const model = openaiModelSelect.value;
+
+          console.log('[S4S] API Key length:', apiKey.length);
+          console.log('[S4S] Selected model:', model);
+
+          if (!apiKey) {
+            statusDiv.textContent = 'Error: OpenAI API key is required';
+            return;
+          }
+
+          if (!apiKey.startsWith('sk-')) {
+            statusDiv.textContent = 'Error: Invalid OpenAI API key format (should start with sk-)';
+            return;
+          }
+
+          saveOpenAIConfigBtn.disabled = true;
+          saveOpenAIConfigBtn.textContent = 'Saving...';
+          
+          const config = { apiKey, model };
+          console.log('[S4S] Saving config:', { ...config, apiKey: config.apiKey.substring(0, 10) + '...' });
+          const success = await saveOpenAIConfigToStorage(config);
+          
+          console.log('[S4S] Save result:', success);
+          
+          if (success) {
+            statusDiv.textContent = 'OpenAI configuration saved successfully!';
+            saveOpenAIConfigBtn.textContent = 'Saved!';
+            setTimeout(() => {
+              saveOpenAIConfigBtn.textContent = 'Save OpenAI Config';
+              saveOpenAIConfigBtn.disabled = false;
+            }, 2000);
+          } else {
+            statusDiv.textContent = 'Error: Failed to save OpenAI configuration';
+            saveOpenAIConfigBtn.textContent = 'Save OpenAI Config';
+            saveOpenAIConfigBtn.disabled = false;
+          }
+        } catch (error) {
+          console.error('[S4S] Error saving OpenAI configuration:', error);
+          statusDiv.textContent = 'Error: ' + error.message;
+          saveOpenAIConfigBtn.textContent = 'Save OpenAI Config';
+          saveOpenAIConfigBtn.disabled = false;
+        }
+      });
+
+      // Test OpenAI connection button event listener
+      testOpenAIBtn.addEventListener('click', async () => {
+        try {
+          console.log('[S4S] Starting OpenAI connection test...');
+          const apiKey = openaiApiKeyInput.value.trim();
+          const model = openaiModelSelect.value;
+
+          console.log('[S4S] API Key length:', apiKey.length);
+          console.log('[S4S] Selected model:', model);
+
+          if (!apiKey) {
+            statusDiv.textContent = 'Error: OpenAI API key is required';
+            return;
+          }
+
+          if (!apiKey.startsWith('sk-')) {
+            statusDiv.textContent = 'Error: Invalid OpenAI API key format (should start with sk-)';
+            return;
+          }
+
+          testOpenAIBtn.disabled = true;
+          testOpenAIBtn.textContent = 'Testing...';
+          
+          console.log('[S4S] Sending test request to OpenAI...');
+          // Test with a simple prompt
+          const testResponse = await sendMessageToOpenAI('Respond with "OK" if you can see this message.', model);
+          
+          console.log('[S4S] Test response received:', testResponse);
+          
+          if (testResponse && testResponse.success) {
+            statusDiv.textContent = 'OpenAI connection test successful!';
+            testOpenAIBtn.textContent = 'Test Passed!';
+            setTimeout(() => {
+              testOpenAIBtn.textContent = 'Test Connection';
+              testOpenAIBtn.disabled = false;
+            }, 2000);
+          } else {
+            statusDiv.textContent = 'Error: OpenAI connection test failed';
+            testOpenAIBtn.textContent = 'Test Failed';
+            setTimeout(() => {
+              testOpenAIBtn.textContent = 'Test Connection';
+              testOpenAIBtn.disabled = false;
+            }, 2000);
+          }
+        } catch (error) {
+          console.error('[S4S] Error testing OpenAI connection:', error);
+          statusDiv.textContent = 'Error: ' + error.message;
+          testOpenAIBtn.textContent = 'Test Connection';
+          testOpenAIBtn.disabled = false;
+        }
+      });
+    }
+
+    if (!classifierPromptTextarea || !savePromptBtn || !resetPromptBtn) {
+      console.error('[S4S] Prompt editing elements not found');
+    } else {
+      // Load saved prompt or default on page load
+      (async () => {
+        try {
+          const currentPrompt = await loadPromptFromStorage();
+          classifierPromptTextarea.value = currentPrompt;
+          console.log('[S4S] Loaded prompt into textarea');
+        } catch (error) {
+          console.error('[S4S] Error loading prompt:', error);
+          classifierPromptTextarea.value = DEFAULT_HIRING_CLASSIFIER_PROMPT;
+        }
+      })();
+
+      // Track if prompt has been modified
+      let originalPrompt = '';
+      classifierPromptTextarea.addEventListener('input', () => {
+        const currentValue = classifierPromptTextarea.value;
+        if (currentValue !== originalPrompt) {
+          savePromptBtn.textContent = 'Save Prompt*';
+          savePromptBtn.style.background = '#ff9800';
+        } else {
+          savePromptBtn.textContent = 'Save Prompt';
+          savePromptBtn.style.background = '#ffb300';
+        }
+      });
+
+      // Set original prompt after loading
+      setTimeout(() => {
+        originalPrompt = classifierPromptTextarea.value;
+      }, 100);
+
+      // Save prompt button event listener
+      savePromptBtn.addEventListener('click', async () => {
+        try {
+          const newPrompt = classifierPromptTextarea.value.trim();
+          if (!newPrompt) {
+            statusDiv.textContent = 'Error: Prompt cannot be empty';
+            return;
+          }
+
+          savePromptBtn.disabled = true;
+          savePromptBtn.textContent = 'Saving...';
+          
+          const success = await savePromptToStorage(newPrompt);
+          
+          if (success) {
+            statusDiv.textContent = 'Prompt saved successfully!';
+            savePromptBtn.textContent = 'Saved!';
+            savePromptBtn.style.background = '#4caf50';
+            originalPrompt = newPrompt; // Update original prompt
+            setTimeout(() => {
+              savePromptBtn.textContent = 'Save Prompt';
+              savePromptBtn.style.background = '#ffb300';
+              savePromptBtn.disabled = false;
+            }, 2000);
+          } else {
+            statusDiv.textContent = 'Error: Failed to save prompt';
+            savePromptBtn.textContent = 'Save Prompt';
+            savePromptBtn.style.background = '#ffb300';
+            savePromptBtn.disabled = false;
+          }
+        } catch (error) {
+          console.error('[S4S] Error saving prompt:', error);
+          statusDiv.textContent = 'Error: ' + error.message;
+          savePromptBtn.textContent = 'Save Prompt';
+          savePromptBtn.disabled = false;
+        }
+      });
+
+      // Reset prompt button event listener
+      resetPromptBtn.addEventListener('click', async () => {
+        try {
+          resetPromptBtn.disabled = true;
+          resetPromptBtn.textContent = 'Resetting...';
+          
+          classifierPromptTextarea.value = DEFAULT_HIRING_CLASSIFIER_PROMPT;
+          
+          // Save the default prompt to storage
+          await savePromptToStorage(DEFAULT_HIRING_CLASSIFIER_PROMPT);
+          
+          // Reset the modified state
+          originalPrompt = DEFAULT_HIRING_CLASSIFIER_PROMPT;
+          savePromptBtn.textContent = 'Save Prompt';
+          savePromptBtn.style.background = '#ffb300';
+          
+          statusDiv.textContent = 'Prompt reset to default successfully!';
+          resetPromptBtn.textContent = 'Reset Complete!';
+          setTimeout(() => {
+            resetPromptBtn.textContent = 'Reset to Default';
+            resetPromptBtn.disabled = false;
+          }, 2000);
+        } catch (error) {
+          console.error('[S4S] Error resetting prompt:', error);
+          statusDiv.textContent = 'Error: ' + error.message;
+          resetPromptBtn.textContent = 'Reset to Default';
+          resetPromptBtn.disabled = false;
+        }
+      });
+    }
 
     // Restore Start/Stop Scrolling button functionality
     const startBtn = document.getElementById('startScroll');
