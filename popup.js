@@ -645,9 +645,120 @@ RESPONSE: Return ONLY "YES" or "NO"`;
     }
   }
 
-  // Function to extract title and company from a post's headline
+  // Function to reason about what position they are hiring for using AI
+  async function extractPositionFromContent(post) {
+    console.log(`[S4S] Reasoning about hiring position from post content:`, {
+      name: post.name,
+      content: post.content?.substring(0, 200) + '...'
+    });
+    
+    if (!post.content || post.content.trim() === '') {
+      console.log(`[S4S] No content found for post "${post.name}", no position to extract`);
+      return { position: '' };
+    }
+    
+    const positionReasoningPrompt = `You are an expert at analyzing LinkedIn hiring posts to determine what specific job position/role the company is hiring for.
+
+Analyze this LinkedIn post content and reason about what position they are hiring for:
+
+POST CONTENT: ${post.content}
+
+Consider all available information:
+1. Direct mentions of job titles in the text
+2. Hyperlink text and URLs that might contain position information
+3. Context clues about the type of role (technical, marketing, sales, etc.)
+4. Industry-specific terminology that suggests a role
+5. Company context and what they might be hiring for
+6. Any qualifications or requirements mentioned that hint at the role
+
+Examples of reasoning:
+- "We're hiring! Check out the link" + link text "Apply for Senior Engineer" → "Senior Engineer"
+- "Looking for someone to join our marketing team" → "Marketing Specialist/Manager"
+- "Need a developer who knows React" → "React Developer"
+- "Seeking a data person" → "Data Analyst/Scientist"
+- "Hiring for our sales team" → "Sales Representative"
+- "We're growing and need help" → "" (too vague)
+
+Return JSON only:
+{"position": "specific job position being hired for", "reasoning": "brief explanation of why you think this is the position"}
+
+If you cannot determine a specific position, return empty string for position.
+
+JSON:`;
+
+    console.log(`[S4S] Sending position reasoning prompt to AI`);
+
+    const provider = await getCurrentAIProvider();
+    let response;
+
+    if (provider === 'openai') {
+      const config = await loadOpenAIConfigFromStorage();
+      response = await sendMessageToOpenAI(positionReasoningPrompt, config.model);
+    } else {
+      // Default to Ollama
+      response = await sendMessageToBackground({
+        action: 'ollamaRequest',
+        endpoint: '/api/generate',
+        method: 'POST',
+        body: {
+          model: 'gemma3:12b',
+          prompt: positionReasoningPrompt,
+          stream: false,
+          options: {
+            temperature: 0.1, // Slightly higher for reasoning
+            num_predict: 150, // More tokens for reasoning
+            top_k: 1,
+            top_p: 0.1,
+            repeat_penalty: 1.0,
+            num_ctx: 4096
+          }
+        }
+      });
+    }
+    
+    if (!response || !response.success) {
+      console.error(`[S4S] Position reasoning AI request failed:`, response);
+      return { position: '', reasoning: '' };
+    }
+    
+    console.log(`[S4S] ${provider} position reasoning response:`, response.data.response);
+    
+    try {
+      const result = JSON.parse(response.data.response.trim());
+      console.log(`[S4S] Parsed position reasoning result:`, result);
+      return {
+        position: result.position || '',
+        reasoning: result.reasoning || ''
+      };
+    } catch (error) {
+      console.error('[S4S] Error parsing position reasoning response:', error);
+      console.error('[S4S] Raw position reasoning response was:', response.data.response);
+      
+      // Try to extract manually if JSON parsing fails
+      const responseText = response.data.response.trim();
+      if (responseText.includes('"position"')) {
+        try {
+          const positionMatch = responseText.match(/"position"\s*:\s*"([^"]*)"/);
+          const reasoningMatch = responseText.match(/"reasoning"\s*:\s*"([^"]*)"/);
+          
+          if (positionMatch) {
+            return {
+              position: positionMatch[1] || '',
+              reasoning: reasoningMatch ? reasoningMatch[1] || '' : ''
+            };
+          }
+        } catch (manualError) {
+          console.error('[S4S] Manual position reasoning extraction also failed:', manualError);
+        }
+      }
+      
+      return { position: '', reasoning: '' };
+    }
+  }
+
+  // Function to extract title, company, and position from a post's headline and content
   async function extractTitleAndCompany(post) {
-    console.log(`[S4S] Extracting title/company for post:`, {
+    console.log(`[S4S] Extracting title/company/position for post:`, {
       name: post.name,
       headline: post.headline,
       content: post.content?.substring(0, 100) + '...'
@@ -668,7 +779,8 @@ RESPONSE: Return ONLY "YES" or "NO"`;
       console.log(`[S4S] No headline found for post "${post.name}", using fallback`);
       return {
         title: 'Unknown Title',
-        company: 'Unknown Company'
+        company: 'Unknown Company',
+        position: ''
       };
     }
     
@@ -723,10 +835,11 @@ JSON:`;
     
     console.log(`[S4S] ${provider} response:`, response.data.response);
     
+    let titleCompanyData;
     try {
       const result = JSON.parse(response.data.response.trim());
       console.log(`[S4S] Parsed result:`, result);
-      return {
+      titleCompanyData = {
         title: result.title || 'Unknown Title',
         company: result.company || 'Unknown Company'
       };
@@ -743,7 +856,7 @@ JSON:`;
           const companyMatch = responseText.match(/"company"\s*:\s*"([^"]+)"/);
           
           if (titleMatch && companyMatch) {
-            return {
+            titleCompanyData = {
               title: titleMatch[1] || 'Unknown Title',
               company: companyMatch[1] || 'Unknown Company'
             };
@@ -753,11 +866,22 @@ JSON:`;
         }
       }
       
-      return {
-        title: 'Unknown Title',
-        company: 'Unknown Company'
-      };
+      if (!titleCompanyData) {
+        titleCompanyData = {
+          title: 'Unknown Title',
+          company: 'Unknown Company'
+        };
+      }
     }
+    
+    // Now extract position from content
+    const positionData = await extractPositionFromContent(post);
+    
+    return {
+      ...titleCompanyData,
+      position: positionData.position,
+      positionReasoning: positionData.reasoning
+    };
   }
 
   // Function to batch analyze posts for better performance
@@ -1427,20 +1551,24 @@ JSON:`;
       if (isHiring) {
         console.log(`[S4S] Streaming: Post is hiring - ${post.name}`);
         
-        // Extract title and company
+        // Extract title, company, and position
         const titleCompanyData = await extractTitleAndCompany(post);
         
         const enrichedPost = {
           ...analyzedPost,
           title: titleCompanyData.title,
-          company: titleCompanyData.company
+          company: titleCompanyData.company,
+          position: titleCompanyData.position,
+          positionReasoning: titleCompanyData.positionReasoning
         };
         
         // Add to streaming leads
         streamingLeads.push(enrichedPost);
         
         // Update status and metrics immediately
-        statusDiv.textContent = `Found lead ${streamingLeads.length}: ${post.name} - ${titleCompanyData.title} at ${titleCompanyData.company}`;
+        const positionText = titleCompanyData.position ? ` (${titleCompanyData.position})` : '';
+        const reasoningText = titleCompanyData.positionReasoning ? ` - ${titleCompanyData.positionReasoning.substring(0, 50)}...` : '';
+        statusDiv.textContent = `Found lead ${streamingLeads.length}: ${post.name} - ${titleCompanyData.title} at ${titleCompanyData.company}${positionText}${reasoningText}`;
         updateMetrics();
         
         // Save to storage
@@ -1763,18 +1891,20 @@ JSON:`;
       alert('No leads to export!');
       return;
     }
-    // Updated columns to include title, company, connection degree, post URL and post date
+    // Updated columns to include title, company, position, reasoning, connection degree, post URL and post date
     const headerKeys = [
       'name',
       'title',
       'company',
+      'position',
+      'position_reasoning',
       'connection_degree',
       'posturl',
       'profileurl',
       'post_date',
       'post_content'
     ];
-    const header = ['Name', 'Title', 'Company', 'Connection Degree', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
+    const header = ['Name', 'Title', 'Company', 'Position Hiring For', 'Position Reasoning', 'Connection Degree', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
     function escapeCSVField(field) {
       if (field === null || field === undefined) return '';
       const str = String(field);
@@ -1797,6 +1927,8 @@ JSON:`;
       escapeCSVField(lead.name || ''),
       escapeCSVField(lead.title || 'Unknown Title'),
       escapeCSVField(lead.company || 'Unknown Company'),
+      escapeCSVField(lead.position || ''),
+      escapeCSVField(lead.positionReasoning || ''),
       escapeCSVField(lead.connection_degree || lead.connectionDegree || '3rd'),
       escapeCSVField(lead.posturl || lead.postUrl || ''),
       escapeCSVField(lead.profileurl || lead.linkedin_profile_url || lead.linkedinUrl || ''),
@@ -1828,6 +1960,8 @@ JSON:`;
       'Is Hiring', 
       'Title', 
       'Company', 
+      'Position Hiring For',
+      'Position Reasoning',
       'Connection Degree', 
       'Post URL', 
       'Profile URL', 
@@ -1862,6 +1996,8 @@ JSON:`;
       escapeCSVField(post.isHiring ? 'YES' : 'NO'),
       escapeCSVField(post.title || ''),
       escapeCSVField(post.company || ''),
+      escapeCSVField(post.position || ''),
+      escapeCSVField(post.positionReasoning || ''),
       escapeCSVField(post.connection_degree || post.connectionDegree || '3rd'),
       escapeCSVField(post.posturl || post.postUrl || ''),
       escapeCSVField(post.profileurl || post.linkedin_profile_url || post.linkedinUrl || ''),
