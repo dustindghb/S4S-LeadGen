@@ -637,7 +637,7 @@ RESPONSE: Return ONLY "YES" or "NO"`;
       });
       
       if (!response || !response.success) {
-        throw new Error(response?.error || 'Failed to get response from Ollama');
+        throw new Error(response?.error || `Failed to get response from ${provider}`);
       }
       
       const result = response.data.response.trim().toUpperCase();
@@ -832,11 +832,11 @@ JSON:`;
   }
 
   // Function to send data to Ollama for lead analysis (legacy - keeping for compatibility)
-  async function analyzeLeadsWithOllama(posts, prompt) {
-    await checkOllamaPort(); // Verify Ollama is running
+  async function analyzeLeadsWithAI(posts, prompt) {
+    const provider = await getCurrentAIProvider();
     const jsonData = organizeDataForJSON(posts);
     
-    console.log('Sending posts to Ollama:', jsonData.length, 'posts');
+    console.log(`Sending posts to ${provider}:`, jsonData.length, 'posts');
     console.log('Sample post data:', jsonData[0]);
     
     // Create the final prompt with the JSON data
@@ -853,19 +853,28 @@ JSON:`;
     console.log('Prompt preview:', finalPrompt.substring(0, 1000) + '...');
     console.log('JSON data included:', finalPrompt.includes('"name"') && finalPrompt.includes('"post_content"'));
     
-    const response = await sendMessageToBackground({
-      action: 'ollamaRequest',
-      endpoint: '/api/generate',
-      method: 'POST',
-      body: {
-        model: 'gemma3:12b',
-        prompt: finalPrompt,
-        stream: false
-      }
-    });
+    let response;
+    
+    if (provider === 'openai') {
+      const config = await loadOpenAIConfigFromStorage();
+      response = await sendMessageToOpenAI(finalPrompt, config.model);
+    } else {
+      // Default to Ollama
+      await checkOllamaPort(); // Verify Ollama is running
+      response = await sendMessageToBackground({
+        action: 'ollamaRequest',
+        endpoint: '/api/generate',
+        method: 'POST',
+        body: {
+          model: 'gemma3:12b',
+          prompt: finalPrompt,
+          stream: false
+        }
+      });
+    }
     
     if (!response || !response.success) {
-      throw new Error(response?.error || 'Failed to get response from Ollama');
+      throw new Error(response?.error || `Failed to get response from ${provider}`);
     }
     
     return response.data.response;
@@ -1531,13 +1540,20 @@ JSON:`;
     showMetrics(true);
     updateMetrics();
     
-    // Test Ollama connection first
-    const connectionTest = await testOllamaConnection();
-    if (!connectionTest.success) {
-      throw new Error(`Ollama connection failed: ${connectionTest.error}`);
-    }
+    // Check current AI provider and test connection if needed
+    const currentProvider = await getCurrentAIProvider();
     
-    statusDiv.textContent = `Ollama connected. Starting streaming analysis...`;
+    if (currentProvider === 'ollama') {
+      // Test Ollama connection only if using Ollama
+      const connectionTest = await testOllamaConnection();
+      if (!connectionTest.success) {
+        throw new Error(`Ollama connection failed: ${connectionTest.error}`);
+      }
+      statusDiv.textContent = `Ollama connected. Starting streaming analysis...`;
+    } else {
+      // Using OpenAI, no connection test needed
+      statusDiv.textContent = `Using ${currentProvider}. Starting streaming analysis...`;
+    }
     
     // Start periodic analysis during scrolling
     streamingAnalysisInterval = setInterval(async () => {
