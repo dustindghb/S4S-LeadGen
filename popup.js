@@ -654,35 +654,35 @@ RESPONSE: Return ONLY "YES" or "NO"`;
     
     if (!post.content || post.content.trim() === '') {
       console.log(`[S4S] No content found for post "${post.name}", no position to extract`);
-      return { position: '' };
+      return { position: '', reasoning: 'No content available' };
     }
     
-    const positionReasoningPrompt = `You are an expert at analyzing LinkedIn hiring posts to determine what specific job position/role the company is hiring for.
+    // Log the full content for debugging
+    console.log(`[S4S] Full post content for position extraction:`, post.content);
+    
+    const positionReasoningPrompt = `You are an expert at analyzing LinkedIn hiring posts to extract the exact job position being hired for.
 
-Analyze this LinkedIn post content and reason about what position they are hiring for:
+Analyze this LinkedIn post content and extract the specific job position:
 
 POST CONTENT: ${post.content}
 
-Consider all available information:
-1. Direct mentions of job titles in the text
-2. Hyperlink text and URLs that might contain position information
-3. Context clues about the type of role (technical, marketing, sales, etc.)
-4. Industry-specific terminology that suggests a role
-5. Company context and what they might be hiring for
-6. Any qualifications or requirements mentioned that hint at the role
+CRITICAL INSTRUCTIONS:
+1. Look for EXACT job titles mentioned in the text
+2. Extract the job title exactly as written (e.g., "VP of Merchandising", "Senior Software Engineer")
+3. Look for job titles after phrases like "looking for", "seeking", "hiring for", "we are looking for"
+4. Pay attention to job titles in quotes or emphasized text
+5. If multiple positions are mentioned, choose the most specific/senior one
+6. Only return empty string if no specific job title can be identified
 
-Examples of reasoning:
-- "We're hiring! Check out the link" + link text "Apply for Senior Engineer" → "Senior Engineer"
-- "Looking for someone to join our marketing team" → "Marketing Specialist/Manager"
-- "Need a developer who knows React" → "React Developer"
-- "Seeking a data person" → "Data Analyst/Scientist"
-- "Hiring for our sales team" → "Sales Representative"
+EXAMPLES:
+- "We are looking for a passionate VP of Merchandising" → "VP of Merchandising"
+- "Hiring Senior Software Engineers" → "Senior Software Engineer"
+- "Seeking Marketing Manager for our team" → "Marketing Manager"
+- "Looking for someone to join our sales team" → "Sales Representative"
 - "We're growing and need help" → "" (too vague)
 
-Return JSON only:
-{"position": "specific job position being hired for", "reasoning": "brief explanation of why you think this is the position"}
-
-If you cannot determine a specific position, return empty string for position.
+Return ONLY valid JSON in this exact format:
+{"position": "exact job title or empty string", "reasoning": "brief explanation of what was found"}
 
 JSON:`;
 
@@ -718,7 +718,7 @@ JSON:`;
     
     if (!response || !response.success) {
       console.error(`[S4S] Position reasoning AI request failed:`, response);
-      return { position: '', reasoning: '' };
+      return { position: '', reasoning: 'AI request failed' };
     }
     
     console.log(`[S4S] ${provider} position reasoning response:`, response.data.response);
@@ -726,6 +726,7 @@ JSON:`;
     try {
       const result = JSON.parse(response.data.response.trim());
       console.log(`[S4S] Parsed position reasoning result:`, result);
+      
       return {
         position: result.position || '',
         reasoning: result.reasoning || ''
@@ -741,7 +742,7 @@ JSON:`;
           const positionMatch = responseText.match(/"position"\s*:\s*"([^"]*)"/);
           const reasoningMatch = responseText.match(/"reasoning"\s*:\s*"([^"]*)"/);
           
-          if (positionMatch) {
+          if (positionMatch && positionMatch[1] && positionMatch[1].trim() !== '') {
             return {
               position: positionMatch[1] || '',
               reasoning: reasoningMatch ? reasoningMatch[1] || '' : ''
@@ -752,9 +753,11 @@ JSON:`;
         }
       }
       
-      return { position: '', reasoning: '' };
+      return { position: '', reasoning: 'Failed to parse AI response' };
     }
   }
+
+
 
   // Function to extract title, company, and position from a post's headline and content
   async function extractTitleAndCompany(post) {
@@ -1345,6 +1348,28 @@ JSON:`;
       });
     }
 
+    // Initialize date filter functionality
+    const dateFilterInput = document.getElementById('dateFilterDays');
+    const clearDateFilterBtn = document.getElementById('clearDateFilter');
+    
+    if (clearDateFilterBtn) {
+      clearDateFilterBtn.addEventListener('click', () => {
+        if (dateFilterInput) {
+          dateFilterInput.value = '';
+          statusDiv.textContent = 'Date filter cleared. All posts will be included in exports.';
+          updateDateFilterUI();
+        }
+      });
+    }
+
+    // Add event listener for date filter input changes
+    if (dateFilterInput) {
+      dateFilterInput.addEventListener('input', updateDateFilterUI);
+    }
+
+    // Initialize the UI
+    updateDateFilterUI();
+
     // Restore Start/Stop Scrolling button functionality
     const startBtn = document.getElementById('startScroll');
     const stopBtn = document.getElementById('stopScroll');
@@ -1501,7 +1526,17 @@ JSON:`;
         const storedLeads = await loadLeadsFromStorage(statusDiv);
         if (storedLeads && storedLeads.length > 0) {
           streamingLeads = storedLeads;
-          statusDiv.textContent = `Loaded ${streamingLeads.length} leads from storage.`;
+          
+          // Check if date filter is active
+          const dateFilterDays = parseInt(document.getElementById('dateFilterDays')?.value) || 0;
+          let leadsCount = streamingLeads.length;
+          
+          if (dateFilterDays > 0) {
+            const filteredLeads = filterPostsByDate(streamingLeads, dateFilterDays);
+            leadsCount = filteredLeads.length;
+          }
+          
+          statusDiv.textContent = `Loaded ${leadsCount} leads from storage.`;
         } else {
           statusDiv.textContent = 'Error: No leads found. Please start scrolling to analyze posts.';
           return;
@@ -1514,8 +1549,17 @@ JSON:`;
       }
       
       // Display and export the leads
-      statusDiv.textContent = `Found ${streamingLeads.length} leads!`;
-      resultsDiv.innerHTML = `<div style="background: #e3f2fd; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 12px; color: #1976d2; border-left: 4px solid #2196f3;">Analysis complete! Found ${streamingLeads.length} leads. Use the download buttons to export results.</div>`;
+      // Check if date filter is active
+      const dateFilterDays = parseInt(document.getElementById('dateFilterDays')?.value) || 0;
+      let leadsCount = streamingLeads.length;
+      
+      if (dateFilterDays > 0) {
+        const filteredLeads = filterPostsByDate(streamingLeads, dateFilterDays);
+        leadsCount = filteredLeads.length;
+      }
+      
+      statusDiv.textContent = `Found ${leadsCount} leads!`;
+      resultsDiv.innerHTML = `<div style="background: #e3f2fd; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 12px; color: #1976d2; border-left: 4px solid #2196f3;">Analysis complete! Found ${leadsCount} leads. Use the download buttons to export results.</div>`;
       exportLeadsToCSV(streamingLeads);
     });
 
@@ -1535,6 +1579,18 @@ JSON:`;
   // New: Function to analyze a single post in real-time
   async function analyzeSinglePostStreaming(post, statusDiv) {
     try {
+      // Check if this post was already analyzed to prevent duplicates
+      const postId = post.postUrl || post.linkedinUrl || `${post.name}-${post.content?.substring(0, 50)}`;
+      const alreadyAnalyzed = allAnalyzedPosts.some(analyzedPost => {
+        const analyzedPostId = analyzedPost.postUrl || analyzedPost.linkedinUrl || `${analyzedPost.name}-${analyzedPost.content?.substring(0, 50)}`;
+        return analyzedPostId === postId;
+      });
+      
+      if (alreadyAnalyzed) {
+        console.log(`[S4S] Post already analyzed, skipping: ${post.name}`);
+        return false;
+      }
+      
       // Check if post is hiring
       const isHiring = await checkIfPostIsHiring(post);
       
@@ -1547,6 +1603,9 @@ JSON:`;
       
       // Add to all analyzed posts
       allAnalyzedPosts.push(analyzedPost);
+      
+      // Update date filter UI to show new post count
+      updateDateFilterUI();
       
       if (isHiring) {
         console.log(`[S4S] Streaming: Post is hiring - ${post.name}`);
@@ -1568,7 +1627,18 @@ JSON:`;
         // Update status and metrics immediately
         const positionText = titleCompanyData.position ? ` (${titleCompanyData.position})` : '';
         const reasoningText = titleCompanyData.positionReasoning ? ` - ${titleCompanyData.positionReasoning.substring(0, 50)}...` : '';
-        statusDiv.textContent = `Found lead ${streamingLeads.length}: ${post.name} - ${titleCompanyData.title} at ${titleCompanyData.company}${positionText}${reasoningText}`;
+        
+        // Check if date filter is active and show filtered count
+        const dateFilterDays = parseInt(document.getElementById('dateFilterDays')?.value) || 0;
+        let leadCountText = streamingLeads.length.toString();
+        
+        if (dateFilterDays > 0) {
+          const filteredLeads = filterPostsByDate(streamingLeads, dateFilterDays);
+          const filteredCount = filteredLeads.length;
+          leadCountText = filteredCount.toString();
+        }
+        
+        statusDiv.textContent = `Found lead ${leadCountText}: ${post.name} - ${titleCompanyData.title} at ${titleCompanyData.company}${positionText}${reasoningText}`;
         updateMetrics();
         
         // Save to storage
@@ -1577,7 +1647,16 @@ JSON:`;
         // Update metrics again after storage
         updateMetrics();
         
-        console.log(`[S4S] Streaming: Added lead - ${post.name} (${streamingLeads.length} total)`);
+        // Log with filtered count if date filter is active
+        let logMessage = `[S4S] Streaming: Added lead - ${post.name} (${streamingLeads.length} total)`;
+        
+        if (dateFilterDays > 0) {
+          const filteredLeads = filterPostsByDate(streamingLeads, dateFilterDays);
+          const filteredCount = filteredLeads.length;
+          logMessage = `[S4S] Streaming: Added lead - ${post.name} (${filteredCount} within ${dateFilterDays} days)`;
+        }
+        
+        console.log(logMessage);
         return true;
       } else {
         console.log(`[S4S] Streaming: Post is not hiring - ${post.name}`);
@@ -1594,6 +1673,9 @@ JSON:`;
         analyzedAt: new Date().toISOString()
       };
       allAnalyzedPosts.push(failedPost);
+      
+      // Update date filter UI to show new post count
+      updateDateFilterUI();
       
       return false;
     }
@@ -1630,7 +1712,7 @@ JSON:`;
         // Add new posts to the queue
         addPostsToQueue(newPosts);
         
-        console.log(`[S4S] Streaming: Found ${newPosts.length} total posts (was ${previousCount}), Queue size: ${postQueue.length}, Processed: ${processedPostCount}, Analysis running: ${isStreamingAnalysis}, Scrolling active: ${isScrollingActive}`);
+        console.log(`[S4S] Streaming: Found ${newPosts.length} total posts (was ${previousCount}), Queue size: ${postQueue.length}, Analyzed: ${allAnalyzedPosts.length}, Analysis running: ${isStreamingAnalysis}, Scrolling active: ${isScrollingActive}`);
         
         // Process the queue
         await processQueue(statusDiv, resultsDiv);
@@ -1662,6 +1744,9 @@ JSON:`;
     optimalBatchSize = 3; // Reset batch size
     lastProcessingTime = 0; // Reset processing time
     allAnalyzedPosts = []; // Reset analyzed posts tracking
+    
+    // Update date filter UI after reset
+    updateDateFilterUI();
     metricsUpdateInterval = null; // Reset metrics interval
     
     // Show metrics
@@ -1717,8 +1802,21 @@ JSON:`;
     
     if (metricsDiv && postsFoundSpan && postsAnalyzedSpan && leadsFoundSpan && analysisStatusSpan) {
       postsFoundSpan.textContent = totalPostCount;
-      postsAnalyzedSpan.textContent = processedPostCount;
-      leadsFoundSpan.textContent = streamingLeads.length;
+      postsAnalyzedSpan.textContent = allAnalyzedPosts.length;
+      
+      // Check if date filter is active
+      const dateFilterDays = parseInt(document.getElementById('dateFilterDays')?.value) || 0;
+      let leadsCount = streamingLeads.length;
+      let leadsText = leadsCount.toString();
+      
+      if (dateFilterDays > 0 && streamingLeads.length > 0) {
+        // Filter leads by date and show only the filtered count
+        const filteredLeads = filterPostsByDate(streamingLeads, dateFilterDays);
+        const filteredCount = filteredLeads.length;
+        leadsText = filteredCount.toString();
+      }
+      
+      leadsFoundSpan.textContent = leadsText;
       
       if (allPostsProcessed) {
         analysisStatusSpan.textContent = 'Complete';
@@ -1809,7 +1907,7 @@ JSON:`;
         // Update metrics immediately when post count changes
         updateMetrics();
         
-        console.log(`[S4S] Processing post ${processedPostCount}/${totalPostCount}: ${post.name}`);
+        console.log(`[S4S] Processing post ${allAnalyzedPosts.length + 1}/${totalPostCount}: ${post.name}`);
         
         try {
           const result = await analyzeSinglePostStreaming(post, statusDiv);
@@ -1828,7 +1926,7 @@ JSON:`;
       await Promise.all(batchPromises);
       
       // Update status and metrics
-      statusDiv.textContent = `Analyzed ${processedPostCount}/${totalPostCount} posts (Batch: ${batchSize})`;
+      statusDiv.textContent = `Analyzed ${allAnalyzedPosts.length}/${totalPostCount} posts (Batch: ${batchSize})`;
       updateMetrics();
       
       // Calculate processing time and adjust batch size
@@ -1863,9 +1961,21 @@ JSON:`;
     isStreamingAnalysis = false; // Stop the streaming analysis flag
     updateMetrics();
     
-    if (streamingLeads.length > 0) {
-      statusDiv.textContent = `Analysis complete! Found ${streamingLeads.length} leads! Click "Download Leads as CSV" to export.`;
-      resultsDiv.innerHTML = `<div style="background: #e3f2fd; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 12px; color: #1976d2; border-left: 4px solid #2196f3;">Analysis complete! Found ${streamingLeads.length} leads. Use the download buttons to export results.</div>`;
+          if (streamingLeads.length > 0) {
+        // Check if date filter is active
+        const dateFilterDays = parseInt(document.getElementById('dateFilterDays')?.value) || 0;
+        let leadsMessage = `Analysis complete! Found ${streamingLeads.length} leads!`;
+        let resultsMessage = `Analysis complete! Found ${streamingLeads.length} leads.`;
+        
+        if (dateFilterDays > 0) {
+          const filteredLeads = filterPostsByDate(streamingLeads, dateFilterDays);
+          const filteredCount = filteredLeads.length;
+          leadsMessage = `Analysis complete! Found ${filteredCount} leads within ${dateFilterDays} days!`;
+          resultsMessage = `Analysis complete! Found ${filteredCount} leads within ${dateFilterDays} days.`;
+        }
+        
+        statusDiv.textContent = leadsMessage + ' Click "Download Leads as CSV" to export.';
+        resultsDiv.innerHTML = `<div style="background: #e3f2fd; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 12px; color: #1976d2; border-left: 4px solid #2196f3;">${resultsMessage} Use the download buttons to export results.</div>`;
     } else {
       statusDiv.textContent = 'Analysis complete. No leads found.';
     }
@@ -1885,12 +1995,173 @@ JSON:`;
     console.log('[S4S] Analysis completely stopped and interval cleared');
   }
 
+  // Function to parse post date and check if it's within the specified days
+  function isPostWithinDateRange(post, daysAgo) {
+    if (!daysAgo || daysAgo <= 0) return true; // No filter applied
+    
+    const postDate = post.post_date || post.postDate;
+    if (!postDate) return true; // If no date, include it
+    
+    // Try to parse various date formats
+    let parsedDate;
+    
+    try {
+      // Handle relative dates like "2 days ago", "1 week ago", etc.
+      if (typeof postDate === 'string') {
+        const relativeMatch = postDate.match(/(\d+)\s+(day|week|month|year)s?\s+ago/i);
+        if (relativeMatch) {
+          const amount = parseInt(relativeMatch[1]);
+          const unit = relativeMatch[2].toLowerCase();
+          const now = new Date();
+          
+          switch (unit) {
+            case 'day':
+              parsedDate = new Date(now.getTime() - (amount * 24 * 60 * 60 * 1000));
+              break;
+            case 'week':
+              parsedDate = new Date(now.getTime() - (amount * 7 * 24 * 60 * 60 * 1000));
+              break;
+            case 'month':
+              parsedDate = new Date(now.getTime() - (amount * 30 * 24 * 60 * 60 * 1000));
+              break;
+            case 'year':
+              parsedDate = new Date(now.getTime() - (amount * 365 * 24 * 60 * 60 * 1000));
+              break;
+          }
+        } else {
+          // Try to parse as absolute date
+          parsedDate = new Date(postDate);
+        }
+      } else if (postDate instanceof Date) {
+        parsedDate = postDate;
+      }
+      
+      if (!parsedDate || isNaN(parsedDate.getTime())) {
+        console.log(`[S4S] Could not parse date: ${postDate}, including post in results`);
+        return true; // If we can't parse the date, include it
+      }
+      
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysAgo);
+      
+      const isWithinRange = parsedDate >= cutoffDate;
+      console.log(`[S4S] Date comparison: ${parsedDate.toISOString()} >= ${cutoffDate.toISOString()} = ${isWithinRange}`);
+      
+      return isWithinRange;
+    } catch (error) {
+      console.error(`[S4S] Error parsing date ${postDate}:`, error);
+      return true; // If there's an error parsing, include the post
+    }
+  }
+
+  // Function to filter posts by date range
+  function filterPostsByDate(posts, daysAgo) {
+    if (!daysAgo || daysAgo <= 0) return posts;
+    
+    const filteredPosts = posts.filter(post => isPostWithinDateRange(post, daysAgo));
+    console.log(`[S4S] Date filter: ${posts.length} posts -> ${filteredPosts.length} posts (within ${daysAgo} days)`);
+    return filteredPosts;
+  }
+
+  // Test function for date filtering (can be called from console)
+  window.testDateFiltering = function() {
+    const testPosts = [
+      { name: 'Test User 1', post_date: '2 days ago' },
+      { name: 'Test User 2', post_date: '5 days ago' },
+      { name: 'Test User 3', post_date: '1 week ago' },
+      { name: 'Test User 4', post_date: '2024-01-01' },
+      { name: 'Test User 5', post_date: '' }
+    ];
+    
+    console.log('Testing date filtering with 3 days ago filter:');
+    const filtered = filterPostsByDate(testPosts, 3);
+    console.log('Original posts:', testPosts.length);
+    console.log('Filtered posts:', filtered.length);
+    console.log('Filtered posts:', filtered);
+    
+    return filtered;
+  };
+
+  // Test function for position extraction (can be called from console)
+  window.testPositionExtraction = function(content) {
+    console.log('Testing position extraction for:', content);
+    
+    // Test with a mock post object
+    const mockPost = { name: 'Test User', content: content };
+    
+    // Test the full extraction (this will call AI if available)
+    extractPositionFromContent(mockPost).then(result => {
+      console.log('Full extraction result:', result);
+    }).catch(error => {
+      console.error('Full extraction error:', error);
+    });
+    
+    return 'Testing AI extraction...';
+  };
+
+  // Function to update date filter UI (global scope)
+  function updateDateFilterUI() {
+    const dateFilterInput = document.getElementById('dateFilterDays');
+    const clearDateFilterBtn = document.getElementById('clearDateFilter');
+    const statusDiv = document.getElementById('status');
+    
+    if (!dateFilterInput) return;
+    
+    const days = parseInt(dateFilterInput.value) || 0;
+    if (days > 0) {
+      dateFilterInput.style.borderColor = '#28a745';
+      dateFilterInput.style.backgroundColor = '#f8fff9';
+      if (clearDateFilterBtn) {
+        clearDateFilterBtn.style.display = 'inline-block';
+      }
+      
+      // Show preview of how many posts would be included
+      if (allAnalyzedPosts && allAnalyzedPosts.length > 0) {
+        const filteredCount = filterPostsByDate(allAnalyzedPosts, days).length;
+        const totalCount = allAnalyzedPosts.length;
+        if (statusDiv) {
+          statusDiv.textContent = `Date filter: ${days} days ago. ${filteredCount}/${totalCount} posts will be included in exports.`;
+        }
+      } else if (statusDiv) {
+        statusDiv.textContent = `Date filter set to ${days} days ago. No posts analyzed yet.`;
+      }
+    } else {
+      dateFilterInput.style.borderColor = '#ddd';
+      dateFilterInput.style.backgroundColor = 'white';
+      if (clearDateFilterBtn) {
+        clearDateFilterBtn.style.display = 'none';
+      }
+      
+      // Clear status if no filter
+      if (allAnalyzedPosts && allAnalyzedPosts.length > 0 && statusDiv) {
+        statusDiv.textContent = `No date filter. All ${allAnalyzedPosts.length} posts will be included in exports.`;
+      }
+    }
+    
+    // Update metrics to reflect the new filter
+    updateMetrics();
+  }
+
   // Function to export leads to CSV
   function exportLeadsToCSV(leads) {
     if (!leads || !leads.length) {
       alert('No leads to export!');
       return;
     }
+    
+    // Get the date filter value
+    const dateFilterDays = parseInt(document.getElementById('dateFilterDays').value) || 0;
+    
+    // Filter leads by date if filter is applied
+    let filteredLeads = leads;
+    if (dateFilterDays > 0) {
+      filteredLeads = filterPostsByDate(leads, dateFilterDays);
+      if (filteredLeads.length === 0) {
+        alert(`No leads found within the last ${dateFilterDays} days. Try adjusting the date filter or analyzing more recent posts.`);
+        return;
+      }
+    }
+    
     // Updated columns to include title, company, position, reasoning, connection degree, post URL and post date
     const headerKeys = [
       'name',
@@ -1923,7 +2194,7 @@ JSON:`;
       return cleanedStr;
     }
     // Map each lead to the correct keys, with fallback for profileurl, post_content, and posturl
-    const rows = leads.map(lead => [
+    const rows = filteredLeads.map(lead => [
       escapeCSVField(lead.name || ''),
       escapeCSVField(lead.title || 'Unknown Title'),
       escapeCSVField(lead.company || 'Unknown Company'),
@@ -1940,7 +2211,8 @@ JSON:`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `linkedin_leads_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
+    const filterSuffix = dateFilterDays > 0 ? `_last${dateFilterDays}days` : '';
+    a.download = `linkedin_leads${filterSuffix}_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1952,6 +2224,19 @@ JSON:`;
     if (!allAnalyzedPosts || !allAnalyzedPosts.length) {
       alert('No analyzed posts to export!');
       return;
+    }
+    
+    // Get the date filter value
+    const dateFilterDays = parseInt(document.getElementById('dateFilterDays').value) || 0;
+    
+    // Filter posts by date if filter is applied
+    let filteredPosts = allAnalyzedPosts;
+    if (dateFilterDays > 0) {
+      filteredPosts = filterPostsByDate(allAnalyzedPosts, dateFilterDays);
+      if (filteredPosts.length === 0) {
+        alert(`No posts found within the last ${dateFilterDays} days. Try adjusting the date filter or analyzing more recent posts.`);
+        return;
+      }
     }
     
     const header = [
@@ -1990,7 +2275,7 @@ JSON:`;
     }
     
     // Map each analyzed post to CSV row
-    const rows = allAnalyzedPosts.map(post => [
+    const rows = filteredPosts.map(post => [
       escapeCSVField(post.name || ''),
       escapeCSVField(post.headline || ''),
       escapeCSVField(post.isHiring ? 'YES' : 'NO'),
@@ -2012,7 +2297,8 @@ JSON:`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `linkedin_all_posts_analysis_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
+    const filterSuffix = dateFilterDays > 0 ? `_last${dateFilterDays}days` : '';
+    a.download = `linkedin_all_posts_analysis${filterSuffix}_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

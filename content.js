@@ -284,7 +284,7 @@ if (window.s4sContentScriptLoaded) {
           console.log(`[S4S] Post ${index + 1} no headline found`);
         }
         
-        // Extract content
+        // Extract content - including reposted content
         const contentSelectors = [
           'div.feed-shared-update-v2__description',
           'div.feed-shared-text',
@@ -295,6 +295,8 @@ if (window.s4sContentScriptLoaded) {
         
         let content = '';
         let contentFilteredReason = '';
+        
+        // First, try to extract the main post content
         for (const selector of contentSelectors) {
           const contentElem = post.querySelector(selector);
           if (contentElem && contentElem.innerText.trim()) {
@@ -307,6 +309,7 @@ if (window.s4sContentScriptLoaded) {
                 !text.includes('2nd') && 
                 !text.includes('3rd+')) {
               content = cleanTextContent(text);
+              console.log(`[S4S] Post ${index + 1} found main content: "${content.substring(0, 100)}..."`);
               break;
             } else {
               contentFilteredReason = `Filtered out by length/keywords (length: ${text.length}, text: '${text.slice(0, 40)}...')`;
@@ -314,9 +317,117 @@ if (window.s4sContentScriptLoaded) {
             }
           }
         }
+        
+        // Check if this is a repost and extract original content
+        const repostInfo = detectAndExtractRepostContent(post);
+        
+        // If main content is empty or very short, look for reposted content
+        if (!content || content.length < 50) {
+          console.log(`[S4S] Post ${index + 1} main content is empty or short, looking for reposted content...`);
+          
+          // If we detected a repost, use the original content
+          if (repostInfo.isRepost && repostInfo.originalContent) {
+            content = repostInfo.originalContent;
+            console.log(`[S4S] Post ${index + 1} using detected repost content: "${content.substring(0, 100)}..."`);
+          } else {
+            // Look for reposted content - LinkedIn reposts are often in different containers
+            const repostSelectors = [
+              // Repost containers
+              '.feed-shared-update-v2__content',
+              '.feed-shared-update-v2__content-wrapper',
+              '.feed-shared-update-v2__description-wrapper',
+              '.feed-shared-update-v2__description',
+              
+              // Nested content within reposts
+              '.feed-shared-update-v2__content .feed-shared-update-v2__description',
+              '.feed-shared-update-v2__content .feed-shared-text',
+              '.feed-shared-update-v2__content .break-words',
+              
+              // Repost specific selectors
+              '[data-test-id="repost-content"]',
+              '.repost-content',
+              '.shared-update-content',
+              
+              // Fallback: any nested content that might be the original post
+              '.feed-shared-update-v2__content div[class*="description"]',
+              '.feed-shared-update-v2__content div[class*="text"]',
+              '.feed-shared-update-v2__content span[class*="break"]'
+            ];
+            
+            for (const selector of repostSelectors) {
+              const repostElems = post.querySelectorAll(selector);
+              for (const repostElem of repostElems) {
+                const text = repostElem.innerText.trim();
+                if (text && text.length > 20 && 
+                    !text.includes('Follow') && 
+                    !text.includes('Connect') && 
+                    !text.includes('•') && 
+                    !text.includes('1st') && 
+                    !text.includes('2nd') && 
+                    !text.includes('3rd+') &&
+                    text !== content) { // Make sure it's different from what we already have
+                  
+                  const cleanedText = cleanTextContent(text);
+                  if (cleanedText.length > content.length) {
+                    content = cleanedText;
+                    console.log(`[S4S] Post ${index + 1} found reposted content: "${content.substring(0, 100)}..." using selector: ${selector}`);
+                    break;
+                  }
+                }
+              }
+              if (content && content.length > 50) break; // Found good content, stop searching
+            }
+          }
+        }
+        
+        // If we have both repost commentary and original content, combine them intelligently
+        if (repostInfo.isRepost && repostInfo.originalContent && content && content !== repostInfo.originalContent) {
+          const commentary = content;
+          const originalContent = repostInfo.originalContent;
+          
+          // Combine them with clear separation
+          content = `${commentary}\n\n--- Original Post ---\n${originalContent}`;
+          console.log(`[S4S] Post ${index + 1} combined repost commentary with original content`);
+        }
+        
+        // If still no content, try to find any meaningful text in the post
+        if (!content || content.length < 20) {
+          console.log(`[S4S] Post ${index + 1} still no content, trying broader search...`);
+          
+          // Look for any text content that might be meaningful
+          const allTextElements = post.querySelectorAll('div, span, p');
+          let bestContent = '';
+          
+          for (const elem of allTextElements) {
+            const text = elem.innerText.trim();
+            if (text && text.length > 30 && 
+                !text.includes('Follow') && 
+                !text.includes('Connect') && 
+                !text.includes('•') && 
+                !text.includes('1st') && 
+                !text.includes('2nd') && 
+                !text.includes('3rd+') &&
+                !text.includes(name) && // Don't include the author name
+                text.length > bestContent.length) {
+              
+              const cleanedText = cleanTextContent(text);
+              if (cleanedText.length > bestContent.length) {
+                bestContent = cleanedText;
+              }
+            }
+          }
+          
+          if (bestContent && bestContent.length > content.length) {
+            content = bestContent;
+            console.log(`[S4S] Post ${index + 1} found content via broad search: "${content.substring(0, 100)}..."`);
+          }
+        }
+        
         // Debug log if content is still empty after all selectors
         if (!content) {
           console.log(`[S4S] Post ${index + 1} content is empty after all selectors.`, contentFilteredReason, 'Post outerHTML:', post.outerHTML.slice(0, 1000));
+        } else {
+          console.log(`[S4S] Post ${index + 1} final content length: ${content.length} characters`);
         }
         
         // Clean headline text as well
@@ -362,9 +473,120 @@ if (window.s4sContentScriptLoaded) {
       console.error('[S4S] Error in extractPosts:', error);
       return [];
     }
+    }
+
+  /**
+   * Detects if a post is a repost and extracts the original content
+   * @param {Element} post - The DOM element containing the LinkedIn post
+   * @returns {Object} - Object with isRepost boolean and originalContent string
+   */
+  function detectAndExtractRepostContent(post) {
+    if (!post) return { isRepost: false, originalContent: '' };
+    
+    // Look for repost indicators
+    const repostIndicators = [
+      // Repost text indicators
+      'repost',
+      'reposted',
+      'shared',
+      'via',
+      'from',
+      'check out',
+      'look at this',
+      'great opportunity',
+      'amazing post',
+      'worth sharing',
+      'must read',
+      'interesting',
+      'thought this was worth sharing'
+    ];
+    
+    // Check if the main content contains repost indicators
+    const mainContent = post.innerText.toLowerCase();
+    let isRepost = false;
+    
+    for (const indicator of repostIndicators) {
+      if (mainContent.includes(indicator)) {
+        isRepost = true;
+        console.log(`[S4S] Detected repost indicator: "${indicator}"`);
+        break;
+      }
+    }
+    
+    // Look for repost-specific DOM structure
+    const repostStructureSelectors = [
+      '.feed-shared-update-v2__content',
+      '.feed-shared-update-v2__content-wrapper',
+      '[data-test-id="repost-content"]',
+      '.repost-content',
+      '.shared-update-content'
+    ];
+    
+    for (const selector of repostStructureSelectors) {
+      if (post.querySelector(selector)) {
+        isRepost = true;
+        console.log(`[S4S] Detected repost structure: ${selector}`);
+        break;
+      }
+    }
+    
+    if (!isRepost) {
+      return { isRepost: false, originalContent: '' };
+    }
+    
+    // Extract the original content from the repost
+    const originalContentSelectors = [
+      // Nested content within repost containers
+      '.feed-shared-update-v2__content .feed-shared-update-v2__description',
+      '.feed-shared-update-v2__content .feed-shared-text',
+      '.feed-shared-update-v2__content .break-words',
+      '.feed-shared-update-v2__content div[class*="description"]',
+      '.feed-shared-update-v2__content div[class*="text"]',
+      
+      // Repost specific content
+      '[data-test-id="repost-content"] .feed-shared-text',
+      '[data-test-id="repost-content"] .break-words',
+      '.repost-content .feed-shared-text',
+      '.shared-update-content .feed-shared-text',
+      
+      // Fallback: any substantial text content within repost containers
+      '.feed-shared-update-v2__content div',
+      '.feed-shared-update-v2__content span'
+    ];
+    
+    let originalContent = '';
+    let bestContent = '';
+    
+    for (const selector of originalContentSelectors) {
+      const elements = post.querySelectorAll(selector);
+      for (const elem of elements) {
+        const text = elem.innerText.trim();
+        if (text && text.length > 30 && 
+            !text.includes('Follow') && 
+            !text.includes('Connect') && 
+            !text.includes('•') && 
+            !text.includes('1st') && 
+            !text.includes('2nd') && 
+            !text.includes('3rd+') &&
+            text.length > bestContent.length) {
+          
+          const cleanedText = cleanTextContent(text);
+          if (cleanedText.length > bestContent.length) {
+            bestContent = cleanedText;
+          }
+        }
+      }
+    }
+    
+    if (bestContent) {
+      originalContent = bestContent;
+      console.log(`[S4S] Extracted original repost content: "${originalContent.substring(0, 100)}..."`);
+    }
+    
+    return { isRepost, originalContent };
   }
-  
-    /**
+
+  /**
    * Extracts the degree of connection from a LinkedIn post
    * @param {string|Element} postContent - The LinkedIn post content (HTML string or DOM element)
    * @returns {string|null} - The connection degree ('1st', '2nd', '3rd', '3rd+') or null if not found
@@ -1090,6 +1312,30 @@ if (window.s4sContentScriptLoaded) {
     }
   }
 
+  // Debug function for repost detection
+  function debugRepostDetection() {
+    console.log('[S4S] Debugging repost detection...');
+    
+    const posts = document.querySelectorAll('div.feed-shared-update-v2[data-urn*="activity"], article.feed-shared-update-v2[data-urn*="activity"]');
+    console.log(`[S4S] Found ${posts.length} posts to analyze for reposts`);
+    
+    posts.forEach((post, index) => {
+      const repostInfo = detectAndExtractRepostContent(post);
+      console.log(`[S4S] Post ${index + 1}:`, {
+        isRepost: repostInfo.isRepost,
+        originalContentLength: repostInfo.originalContent.length,
+        originalContentPreview: repostInfo.originalContent.substring(0, 100) + '...'
+      });
+      
+      if (repostInfo.isRepost) {
+        console.log(`[S4S] Post ${index + 1} REPOST DETECTED! Original content:`, repostInfo.originalContent);
+      }
+    });
+  }
+
+  // Make debug functions available globally
+  window.debugRepostDetection = debugRepostDetection;
+
   // Listen for messages from popup or background
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     console.log('[S4S] Received message:', msg);
@@ -1142,6 +1388,12 @@ if (window.s4sContentScriptLoaded) {
       if (msg.action === "debugConnectionDegree") {
         debugConnectionDegree();
         sendResponse({ success: true, message: "Debug completed - check console" });
+        return false; // Synchronous response
+      }
+
+      if (msg.action === "debugRepostDetection") {
+        debugRepostDetection();
+        sendResponse({ success: true, message: "Repost debug completed - check console" });
         return false; // Synchronous response
       }
       
