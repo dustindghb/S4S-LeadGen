@@ -472,19 +472,19 @@ RESPONSE: Return ONLY "YES" or "NO"`;
       
       if (typeof chrome === 'undefined') {
         console.error('[S4S] Chrome object is undefined');
-        resolve('ollama');
+        resolve('openai');
         return;
       }
       
       if (!chrome.storage) {
         console.error('[S4S] chrome.storage is not available');
-        resolve('ollama');
+        resolve('openai');
         return;
       }
       
       if (!chrome.storage.local) {
         console.error('[S4S] chrome.storage.local is not available, using fallback storage');
-        resolve(fallbackStorage.aiProvider || 'ollama');
+        resolve(fallbackStorage.aiProvider || 'openai');
         return;
       }
       
@@ -493,22 +493,22 @@ RESPONSE: Return ONLY "YES" or "NO"`;
           if (chrome.runtime.lastError) {
             console.error('[S4S] Error loading AI provider from storage:', chrome.runtime.lastError);
             console.log('[S4S] Using fallback storage instead');
-            resolve(fallbackStorage.aiProvider || 'ollama');
+            resolve(fallbackStorage.aiProvider || 'openai');
           } else {
             const savedProvider = result.aiProvider;
             if (savedProvider) {
               console.log('[S4S] Loaded saved AI provider from storage:', savedProvider);
               resolve(savedProvider);
             } else {
-              console.log('[S4S] No saved AI provider found, using ollama');
-              resolve('ollama');
+              console.log('[S4S] No saved AI provider found, using openai');
+              resolve('openai');
             }
           }
         });
       } catch (error) {
         console.error('[S4S] Exception while loading AI provider from storage:', error);
         console.log('[S4S] Using fallback storage instead');
-        resolve(fallbackStorage.aiProvider || 'ollama');
+        resolve(fallbackStorage.aiProvider || 'openai');
       }
     });
   }
@@ -557,7 +557,7 @@ RESPONSE: Return ONLY "YES" or "NO"`;
   // Fallback in-memory storage for when chrome.storage is not available
   const fallbackStorage = {
     openaiConfig: null,
-    aiProvider: 'ollama',
+    aiProvider: 'openai',
     hiringClassifierPrompt: null
   };
 
@@ -647,20 +647,20 @@ RESPONSE: Return ONLY "YES" or "NO"`;
 
   // Function to reason about what position they are hiring for using AI
   async function extractPositionFromContent(post) {
-    console.log(`[S4S] Reasoning about hiring position from post content:`, {
+    console.log(`[S4S] Extracting hiring position from post content:`, {
       name: post.name,
       content: post.content?.substring(0, 200) + '...'
     });
     
     if (!post.content || post.content.trim() === '') {
       console.log(`[S4S] No content found for post "${post.name}", no position to extract`);
-      return { position: '', reasoning: 'No content available' };
+      return '';
     }
     
     // Log the full content for debugging
     console.log(`[S4S] Full post content for position extraction:`, post.content);
     
-    const positionReasoningPrompt = `You are an expert at analyzing LinkedIn hiring posts to extract the exact job position being hired for.
+    const positionPrompt = `You are an expert at analyzing LinkedIn hiring posts to extract the exact job position being hired for.
 
 Analyze this LinkedIn post content and extract the specific job position:
 
@@ -681,19 +681,16 @@ EXAMPLES:
 - "Looking for someone to join our sales team" → "Sales Representative"
 - "We're growing and need help" → "" (too vague)
 
-Return ONLY valid JSON in this exact format:
-{"position": "exact job title or empty string", "reasoning": "brief explanation of what was found"}
+Return ONLY the job title as a string, or empty string if no specific job title found:`;
 
-JSON:`;
-
-    console.log(`[S4S] Sending position reasoning prompt to AI`);
+    console.log(`[S4S] Sending position extraction prompt to AI`);
 
     const provider = await getCurrentAIProvider();
     let response;
 
     if (provider === 'openai') {
       const config = await loadOpenAIConfigFromStorage();
-      response = await sendMessageToOpenAI(positionReasoningPrompt, config.model);
+      response = await sendMessageToOpenAI(positionPrompt, config.model);
     } else {
       // Default to Ollama
       response = await sendMessageToBackground({
@@ -702,11 +699,11 @@ JSON:`;
         method: 'POST',
         body: {
           model: 'gemma3:12b',
-          prompt: positionReasoningPrompt,
+          prompt: positionPrompt,
           stream: false,
           options: {
-            temperature: 0.1, // Slightly higher for reasoning
-            num_predict: 150, // More tokens for reasoning
+            temperature: 0.0,
+            num_predict: 50,
             top_k: 1,
             top_p: 0.1,
             repeat_penalty: 1.0,
@@ -717,44 +714,16 @@ JSON:`;
     }
     
     if (!response || !response.success) {
-      console.error(`[S4S] Position reasoning AI request failed:`, response);
-      return { position: '', reasoning: 'AI request failed' };
+      console.error(`[S4S] Position extraction AI request failed:`, response);
+      return '';
     }
     
-    console.log(`[S4S] ${provider} position reasoning response:`, response.data.response);
+    console.log(`[S4S] ${provider} position extraction response:`, response.data.response);
     
-    try {
-      const result = JSON.parse(response.data.response.trim());
-      console.log(`[S4S] Parsed position reasoning result:`, result);
-      
-      return {
-        position: result.position || '',
-        reasoning: result.reasoning || ''
-      };
-    } catch (error) {
-      console.error('[S4S] Error parsing position reasoning response:', error);
-      console.error('[S4S] Raw position reasoning response was:', response.data.response);
-      
-      // Try to extract manually if JSON parsing fails
-      const responseText = response.data.response.trim();
-      if (responseText.includes('"position"')) {
-        try {
-          const positionMatch = responseText.match(/"position"\s*:\s*"([^"]*)"/);
-          const reasoningMatch = responseText.match(/"reasoning"\s*:\s*"([^"]*)"/);
-          
-          if (positionMatch && positionMatch[1] && positionMatch[1].trim() !== '') {
-            return {
-              position: positionMatch[1] || '',
-              reasoning: reasoningMatch ? reasoningMatch[1] || '' : ''
-            };
-          }
-        } catch (manualError) {
-          console.error('[S4S] Manual position reasoning extraction also failed:', manualError);
-        }
-      }
-      
-      return { position: '', reasoning: 'Failed to parse AI response' };
-    }
+    const position = response.data.response.trim();
+    console.log(`[S4S] Extracted position:`, position);
+    
+    return position;
   }
 
 
@@ -878,12 +847,11 @@ JSON:`;
     }
     
     // Now extract position from content
-    const positionData = await extractPositionFromContent(post);
+    const position = await extractPositionFromContent(post);
     
     return {
       ...titleCompanyData,
-      position: positionData.position,
-      positionReasoning: positionData.reasoning
+      position: position
     };
   }
 
@@ -1029,6 +997,8 @@ JSON:`;
   let lastProcessingTime = 0; // New: track processing time to optimize batch size
   let allAnalyzedPosts = []; // New: store all posts with their analysis results
   let metricsUpdateInterval = null; // New: interval for frequent metrics updates
+  let postLimit = 0; // New: limit for number of posts to analyze
+  let postLimitReached = false; // New: flag to track if post limit has been reached
 
   // Helper to save and load leads from chrome.storage
   function saveLeadsToStorage(leads, statusDiv) {
@@ -1112,6 +1082,9 @@ JSON:`;
           console.log('[S4S] Loaded AI provider preference:', savedProvider);
         } catch (error) {
           console.error('[S4S] Error loading AI provider preference:', error);
+          // Default to OpenAI if there's an error
+          openaiProviderRadio.checked = true;
+          openaiConfigDiv.style.display = 'block';
         }
       })();
 
@@ -1370,6 +1343,30 @@ JSON:`;
     // Initialize the UI
     updateDateFilterUI();
 
+    // Initialize post limit functionality
+    const postLimitInput = document.getElementById('postLimit');
+    const clearPostLimitBtn = document.getElementById('clearPostLimit');
+    
+    if (clearPostLimitBtn) {
+      clearPostLimitBtn.addEventListener('click', () => {
+        if (postLimitInput) {
+          postLimitInput.value = '';
+          postLimit = 0;
+          postLimitReached = false;
+          statusDiv.textContent = 'Post limit cleared. Analysis will continue until manually stopped.';
+          updatePostLimitUI();
+        }
+      });
+    }
+
+    // Add event listener for post limit input changes
+    if (postLimitInput) {
+      postLimitInput.addEventListener('input', updatePostLimitUI);
+    }
+
+    // Initialize the post limit UI
+    updatePostLimitUI();
+
     // Restore Start/Stop Scrolling button functionality
     const startBtn = document.getElementById('startScroll');
     const stopBtn = document.getElementById('stopScroll');
@@ -1410,6 +1407,19 @@ JSON:`;
           startBtn.disabled = false;
           stopBtn.disabled = true;
           return;
+        }
+
+        // Check AI provider configuration
+        const currentProvider = await getCurrentAIProvider();
+        if (currentProvider === 'openai') {
+          const config = await loadOpenAIConfigFromStorage();
+          if (!config.apiKey || config.apiKey.trim() === '') {
+            alert('OpenAI API key is required to start analysis. Please configure your OpenAI API key in the settings.');
+            statusDiv.textContent = 'Error: OpenAI API key not configured. Please enter your API key.';
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            return;
+          }
         }
 
         statusDiv.textContent = 'Starting scroll with streaming analysis...';
@@ -1478,42 +1488,6 @@ JSON:`;
     });
 
     // Create and wire up buttons using components
-    const extractBtn = window.createExtractButton(controlsDiv, async () => {
-      try {
-        const tab = await getMostRecentLinkedInTab();
-        if (!tab) {
-          statusDiv.textContent = 'No LinkedIn tab found. Please open a LinkedIn page.';
-          return;
-        }
-        const tabId = tab.id;
-        statusDiv.textContent = 'Ensuring content script is loaded...';
-        resultsDiv.innerHTML = '';
-        // Ensure content script is injected
-        const injected = await ensureContentScriptInjected();
-        if (!injected) {
-          statusDiv.textContent = 'Error: Could not inject content script. Please refresh the LinkedIn page.';
-          return;
-        }
-        // Test if content script is responsive
-        const isResponsive = await testContentScript(tabId);
-        if (!isResponsive) {
-          statusDiv.textContent = 'Error: Content script not responsive. Please refresh the LinkedIn page.';
-          return;
-        }
-        statusDiv.textContent = 'Extracting posts...';
-        const response = await sendMessage(tabId, { action: "extractPosts" });
-        if (response && response.posts) {
-          extractedPosts = response.posts;
-          statusDiv.textContent = `Found ${response.posts.length} posts`;
-          displayJSONData(response.posts);
-        } else {
-          resultsDiv.textContent = 'No posts found or not on LinkedIn feed page.';
-        }
-      } catch (error) {
-        statusDiv.textContent = 'Error: ' + error.message;
-        resultsDiv.textContent = 'Failed to extract posts. Please refresh the LinkedIn page and try again.';
-      }
-    });
 
     // Remove any duplicate Download CSV buttons
     downloadSection.innerHTML = '';
@@ -1577,7 +1551,7 @@ JSON:`;
   });
 
   // New: Function to analyze a single post in real-time
-  async function analyzeSinglePostStreaming(post, statusDiv) {
+  async function analyzeSinglePostStreaming(post, statusDiv, resultsDiv) {
     try {
       // Check if this post was already analyzed to prevent duplicates
       const postId = post.postUrl || post.linkedinUrl || `${post.name}-${post.content?.substring(0, 50)}`;
@@ -1588,6 +1562,7 @@ JSON:`;
       
       if (alreadyAnalyzed) {
         console.log(`[S4S] Post already analyzed, skipping: ${post.name}`);
+        console.log(`[S4S] Duplicate post skipped - this reduces the number of posts that get analyzed`);
         return false;
       }
       
@@ -1604,6 +1579,31 @@ JSON:`;
       // Add to all analyzed posts
       allAnalyzedPosts.push(analyzedPost);
       
+              // Check if post limit has been reached
+        if (postLimit > 0 && allAnalyzedPosts.length >= postLimit && !postLimitReached) {
+          postLimitReached = true;
+          console.log(`[S4S] Post limit reached: ${allAnalyzedPosts.length}/${postLimit} posts analyzed`);
+          console.log(`[S4S] Total posts found: ${totalPostCount}, Posts analyzed: ${allAnalyzedPosts.length}, Queue size: ${postQueue.length}`);
+          statusDiv.textContent = `Post limit reached! Analyzed ${allAnalyzedPosts.length} posts. Stopping analysis and scrolling.`;
+        
+        // Stop scrolling first
+        try {
+          const tab = await getMostRecentLinkedInTab();
+          if (tab) {
+            await sendMessage(tab.id, { action: "stopScroll" }, 5000);
+          }
+        } catch (error) {
+          console.error('[S4S] Error stopping scroll:', error);
+        }
+        
+        // Stop the streaming analysis
+        stopStreamingAnalysis();
+        
+        // Handle completion
+        handleAnalysisComplete(statusDiv, resultsDiv);
+        return false;
+      }
+      
       // Update date filter UI to show new post count
       updateDateFilterUI();
       
@@ -1613,20 +1613,19 @@ JSON:`;
         // Extract title, company, and position
         const titleCompanyData = await extractTitleAndCompany(post);
         
+        // Add to leads regardless of whether position was found
         const enrichedPost = {
           ...analyzedPost,
           title: titleCompanyData.title,
           company: titleCompanyData.company,
-          position: titleCompanyData.position,
-          positionReasoning: titleCompanyData.positionReasoning
+          position: titleCompanyData.position || 'No hiring position found from post'
         };
         
         // Add to streaming leads
         streamingLeads.push(enrichedPost);
         
         // Update status and metrics immediately
-        const positionText = titleCompanyData.position ? ` (${titleCompanyData.position})` : '';
-        const reasoningText = titleCompanyData.positionReasoning ? ` - ${titleCompanyData.positionReasoning.substring(0, 50)}...` : '';
+        const positionText = titleCompanyData.position ? ` (${titleCompanyData.position})` : ' (No specific position found)';
         
         // Check if date filter is active and show filtered count
         const dateFilterDays = parseInt(document.getElementById('dateFilterDays')?.value) || 0;
@@ -1638,7 +1637,7 @@ JSON:`;
           leadCountText = filteredCount.toString();
         }
         
-        statusDiv.textContent = `Found lead ${leadCountText}: ${post.name} - ${titleCompanyData.title} at ${titleCompanyData.company}${positionText}${reasoningText}`;
+        statusDiv.textContent = `Found lead ${leadCountText}: ${post.name} - ${titleCompanyData.title} at ${titleCompanyData.company}${positionText}`;
         updateMetrics();
         
         // Save to storage
@@ -1747,6 +1746,8 @@ JSON:`;
     
     // Update date filter UI after reset
     updateDateFilterUI();
+    updatePostLimitUI(); // Update post limit UI after reset
+    postLimitReached = false; // Reset post limit reached flag
     metricsUpdateInterval = null; // Reset metrics interval
     
     // Show metrics
@@ -1910,7 +1911,7 @@ JSON:`;
         console.log(`[S4S] Processing post ${allAnalyzedPosts.length + 1}/${totalPostCount}: ${post.name}`);
         
         try {
-          const result = await analyzeSinglePostStreaming(post, statusDiv);
+          const result = await analyzeSinglePostStreaming(post, statusDiv, resultsDiv);
           // Update metrics after each post analysis
           updateMetrics();
           return result;
@@ -1993,6 +1994,11 @@ JSON:`;
     }
     
     console.log('[S4S] Analysis completely stopped and interval cleared');
+    console.log(`[S4S] FINAL SUMMARY: Total posts found: ${totalPostCount}, Posts analyzed: ${allAnalyzedPosts.length}, Leads found: ${streamingLeads.length}`);
+    console.log(`[S4S] If you set a post limit, the difference between 'posts found' and 'posts analyzed' may be due to:`);
+    console.log(`[S4S] - Duplicate posts that were already analyzed`);
+    console.log(`[S4S] - Posts that failed to be processed`);
+    console.log(`[S4S] - Posts still in queue when limit was reached`);
   }
 
   // Function to parse post date and check if it's within the specified days
@@ -2142,6 +2148,45 @@ JSON:`;
     updateMetrics();
   }
 
+  // Function to update post limit UI (global scope)
+  function updatePostLimitUI() {
+    const postLimitInput = document.getElementById('postLimit');
+    const clearPostLimitBtn = document.getElementById('clearPostLimit');
+    const statusDiv = document.getElementById('status');
+    
+    if (!postLimitInput) return;
+    
+    const limit = parseInt(postLimitInput.value) || 0;
+    postLimit = limit; // Update the global variable
+    
+    if (limit > 0) {
+      postLimitInput.style.borderColor = '#ff6b6b';
+      postLimitInput.style.backgroundColor = '#fff5f5';
+      if (clearPostLimitBtn) {
+        clearPostLimitBtn.style.display = 'inline-block';
+      }
+      
+      // Show preview of post limit
+      if (statusDiv) {
+        statusDiv.textContent = `Post limit set to ${limit} posts. Analysis will stop after ${limit} posts have been analyzed.`;
+      }
+    } else {
+      postLimitInput.style.borderColor = '#ddd';
+      postLimitInput.style.backgroundColor = 'white';
+      if (clearPostLimitBtn) {
+        clearPostLimitBtn.style.display = 'none';
+      }
+      
+      // Clear status if no limit
+      if (statusDiv) {
+        statusDiv.textContent = `No post limit set. Analysis will continue until manually stopped.`;
+      }
+    }
+    
+    // Reset the post limit reached flag when limit changes
+    postLimitReached = false;
+  }
+
   // Function to export leads to CSV
   function exportLeadsToCSV(leads) {
     if (!leads || !leads.length) {
@@ -2162,20 +2207,19 @@ JSON:`;
       }
     }
     
-    // Updated columns to include title, company, position, reasoning, connection degree, post URL and post date
+    // Updated columns to include title, company, position, connection degree, post URL and post date
     const headerKeys = [
       'name',
       'title',
       'company',
       'position',
-      'position_reasoning',
       'connection_degree',
       'posturl',
       'profileurl',
       'post_date',
       'post_content'
     ];
-    const header = ['Name', 'Title', 'Company', 'Position Hiring For', 'Position Reasoning', 'Connection Degree', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
+    const header = ['Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
     function escapeCSVField(field) {
       if (field === null || field === undefined) return '';
       const str = String(field);
@@ -2198,8 +2242,7 @@ JSON:`;
       escapeCSVField(lead.name || ''),
       escapeCSVField(lead.title || 'Unknown Title'),
       escapeCSVField(lead.company || 'Unknown Company'),
-      escapeCSVField(lead.position || ''),
-      escapeCSVField(lead.positionReasoning || ''),
+      escapeCSVField(lead.position || 'No hiring position found from post'),
       escapeCSVField(lead.connection_degree || lead.connectionDegree || '3rd'),
       escapeCSVField(lead.posturl || lead.postUrl || ''),
       escapeCSVField(lead.profileurl || lead.linkedin_profile_url || lead.linkedinUrl || ''),
@@ -2246,7 +2289,6 @@ JSON:`;
       'Title', 
       'Company', 
       'Position Hiring For',
-      'Position Reasoning',
       'Connection Degree', 
       'Post URL', 
       'Profile URL', 
@@ -2281,8 +2323,7 @@ JSON:`;
       escapeCSVField(post.isHiring ? 'YES' : 'NO'),
       escapeCSVField(post.title || ''),
       escapeCSVField(post.company || ''),
-      escapeCSVField(post.position || ''),
-      escapeCSVField(post.positionReasoning || ''),
+      escapeCSVField(post.position || 'No hiring position found from post'),
       escapeCSVField(post.connection_degree || post.connectionDegree || '3rd'),
       escapeCSVField(post.posturl || post.postUrl || ''),
       escapeCSVField(post.profileurl || post.linkedin_profile_url || post.linkedinUrl || ''),
