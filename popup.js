@@ -202,6 +202,9 @@ RETURN "YES" IF THE POST CONTAINS ANY OF THESE HIRING INDICATORS:
 - "Remote/hybrid opportunity available"
 - Posts with clear job descriptions or requirements
 - "Tag someone who would be perfect for this role"
+- "We're growing and need help" + specific role
+- "Actively seeking" + job title
+- "Hiring for" + specific position
 
 RETURN "NO" FOR ALL OF THESE:
 - Job seekers looking for work ("I'm looking for work", "Open to work", "Recently laid off")
@@ -219,8 +222,31 @@ RETURN "NO" FOR ALL OF THESE:
 - "After 3 years my journey ended due to redundancy" (job loss)
 - "Here's a list of recruiters looking to fill roles" (resource sharing)
 - "Landing interviews but getting rejected? Here's how to fix it" (job seeker advice)
+- Personal announcements about moving cities or locations
+- Company news articles or press releases
+- Industry rankings or lists (e.g., "top fintech companies")
+- General business updates without hiring intent
+- Posts about company culture or values without job openings
+- Personal reflections or opinions about business topics
+- Posts about market trends or industry analysis
+- Announcements about company achievements or milestones
+- Posts about personal career changes or transitions
 
-KEY RULE: If the post contains clear hiring language indicating the author/company is actively seeking candidates, return "YES" - even if the post is brief like "We're hiring!"
+EXAMPLES OF WHAT TO RETURN "NO" FOR:
+- "I'm moving back to SF from NYC" (personal announcement)
+- "The world's top fintech companies: 2025" (industry list)
+- "We're growing our team" (vague, no specific hiring)
+- "Great to see our company in the news" (company update)
+- "Here's what I learned about hiring" (advice/education)
+- "We're expanding to new markets" (business update)
+
+EXAMPLES OF WHAT TO RETURN "YES" FOR:
+- "We're hiring Software Engineers" (specific role)
+- "Looking for a Marketing Manager to join our team" (specific hiring)
+- "Apply now for our open positions" (clear hiring intent)
+- "We have openings for Data Scientists" (specific role)
+
+KEY RULE: The post must contain CLEAR hiring language indicating the author/company is actively seeking candidates RIGHT NOW. If in doubt, return "NO".
 
 POST CONTENT: {post.content || post.message || ''}
 POST HEADLINE: {post.headline || ''}
@@ -677,7 +703,7 @@ CRITICAL INSTRUCTIONS:
    - In emphasized or quoted text
 4. Pay attention to job titles that appear naturally in the text, even without obvious hiring language
 5. If multiple positions are mentioned, list ALL of them separated by commas
-6. Only return "Could not find from post" if no specific job title can be identified
+6. Only return "None found in post" if no specific job title can be identified
 
 EXAMPLES:
 - "We are looking for a passionate VP of Merchandising" → "VP of Merchandising"
@@ -690,11 +716,11 @@ EXAMPLES:
 - "Senior Manager, Small Business Subcontracting to join our dynamic team" → "Senior Manager, Small Business Subcontracting"
 - "We need a Data Scientist who can..." → "Data Scientist"
 - "Join us as a Product Manager" → "Product Manager"
-- "We're growing and need help" → "Could not find from post" (too vague)
+- "We're growing and need help" → "None found in post" (too vague)
 
 Use your reasoning to identify job titles in any context, not just after specific trigger phrases.
 
-Return ONLY the job titles as a string (comma-separated if multiple), or "Could not find from post" if no specific job title found:`;
+Return ONLY the job titles as a string (comma-separated if multiple), or "None found in post" if no specific job title found:`;
 
     console.log(`[S4S] Sending position extraction prompt to AI`);
 
@@ -1011,6 +1037,7 @@ JSON:`;
   let streamingLeads = []; // New: store leads found during streaming
   let isStreamingAnalysis = false; // New: track if we're doing streaming analysis
   let postOrderCounter = 0; // New: track the order of posts discovered
+  let analyzedPostCounter = 0; // New: track the order of ALL analyzed posts
   let buttonHealthInterval = null; // New: interval to check button health
   let processedPostCount = 0; // New: track processed posts
   let totalPostCount = 0; // New: track total posts found
@@ -1624,11 +1651,15 @@ JSON:`;
       // Check if post is hiring
       const isHiring = await checkIfPostIsHiring(post);
       
+      // Increment the analyzed post counter for ALL posts
+      analyzedPostCounter++;
+      
       // Store the post with analysis result
       const analyzedPost = {
         ...post,
         isHiring: isHiring,
-        analyzedAt: new Date().toISOString()
+        analyzedAt: new Date().toISOString(),
+        postOrder: analyzedPostCounter // Track which post number this was among ALL analyzed posts
       };
       
       // Add to all analyzed posts
@@ -1673,7 +1704,7 @@ JSON:`;
           ...analyzedPost,
           title: titleCompanyData.title,
           company: titleCompanyData.company,
-          position: titleCompanyData.position || 'Could not find from post'
+          position: titleCompanyData.position || 'None found in post'
         };
         
         // Check if this lead was already added to prevent duplicates
@@ -1688,12 +1719,11 @@ JSON:`;
           return true; // Still return true since it was a valid lead
         }
         
-        // Add to streaming leads with post order
-        postOrderCounter++;
+        // Add to streaming leads with the overall post order
         const enrichedPostWithOrder = {
           ...enrichedPost,
-          postOrder: postOrderCounter,
-          postOrderText: `${postOrderCounter}/${totalPostCount}`
+          postOrder: analyzedPost.postOrder, // Use the overall post analysis order
+          postOrderText: analyzedPost.postOrder.toString()
         };
         streamingLeads.push(enrichedPostWithOrder);
         
@@ -1817,6 +1847,7 @@ JSON:`;
     processedPostCount = 0;
     totalPostCount = 0;
     postOrderCounter = 0; // Reset post order counter
+    analyzedPostCounter = 0; // Reset analyzed post counter
     processedPostIds.clear(); // Reset processed posts tracking
     analysisIterationCount = 0; // Reset iteration count
     postQueue = []; // Reset the queue
@@ -2010,6 +2041,38 @@ JSON:`;
       buttonHealthInterval = null;
     }
     console.log('[S4S] Stopped button health monitoring');
+  }
+
+  // New: Function to generate personalized connection messages
+  function generateConnectionMessage(name, connectionDegree, title) {
+    // Check if this is a company account
+    const isCompanyAccount = title && (title.toLowerCase().includes('company account') || title.toLowerCase().includes('business account'));
+    
+    // Extract first name from full name (only if not a company account)
+    let firstName = 'there';
+    if (!isCompanyAccount && name) {
+      firstName = name.split(' ')[0];
+    }
+    
+    // Clean up connection degree
+    const cleanConnectionDegree = connectionDegree ? connectionDegree.toLowerCase().replace(/\s+/g, '') : '3rd';
+    
+    if (cleanConnectionDegree.includes('2nd') || cleanConnectionDegree.includes('second')) {
+      return `Hi ${firstName},
+
+I am the CEO of Stage 4 Solutions, a consulting and interim staffing company ranked on Inc.5000 list five times. We share many connections on LinkedIn. I noticed your company is growing and thought it would be great to connect.
+
+Thanks!
+Niti`;
+    } else {
+      // Default for 3rd connections and any other degree
+      return `Hi ${firstName},
+
+I am the CEO of Stage 4 Solutions, a consulting and interim staffing company ranked on Inc.5000 list five times. I noticed your company is growing and thought it would be great to connect.
+
+Thanks!
+Niti`;
+    }
   }
 
   // New: Function to add posts to the processing queue
@@ -2474,7 +2537,7 @@ JSON:`;
       'post_date',
       'post_content'
     ];
-    const header = ['Post Order', 'Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
+    const header = ['Post Order', 'Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Connection Note', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
     function escapeCSVField(field) {
       if (field === null || field === undefined) return '';
       const str = String(field);
@@ -2494,12 +2557,13 @@ JSON:`;
     }
     // Map each lead to the correct keys, with fallback for profileurl, post_content, and posturl
     const rows = filteredLeads.map(lead => [
-      escapeCSVField(lead.postOrderText || lead.postOrder || ''),
+      escapeCSVField(lead.postOrder || lead.postOrderText || ''),
       escapeCSVField(lead.name || ''),
       escapeCSVField(lead.title || 'Unknown Title'),
       escapeCSVField(lead.company || 'Unknown Company'),
-      escapeCSVField(lead.position || 'Could not find from post'),
+      escapeCSVField(lead.position || 'None found in post'),
       escapeCSVField(lead.connection_degree || lead.connectionDegree || '3rd'),
+      escapeCSVField(generateConnectionMessage(lead.name, lead.connection_degree || lead.connectionDegree, lead.title)),
       escapeCSVField(lead.posturl || lead.postUrl || ''),
       escapeCSVField(lead.profileurl || lead.linkedin_profile_url || lead.linkedinUrl || ''),
       escapeCSVField(lead.post_date || lead.postDate || ''),
@@ -2547,6 +2611,7 @@ JSON:`;
       'Company', 
       'Position Hiring For',
       'Connection Degree', 
+      'Connection Note', 
       'Post URL', 
       'Profile URL', 
       'Post Date', 
@@ -2575,14 +2640,15 @@ JSON:`;
     
     // Map each analyzed post to CSV row
     const rows = filteredPosts.map(post => [
-      escapeCSVField(post.postOrderText || post.postOrder || ''),
+      escapeCSVField(post.postOrder || post.postOrderText || ''),
       escapeCSVField(post.name || ''),
       escapeCSVField(post.headline || ''),
       escapeCSVField(post.isHiring ? 'YES' : 'NO'),
       escapeCSVField(post.title || ''),
       escapeCSVField(post.company || ''),
-      escapeCSVField(post.position || 'Could not find from post'),
+      escapeCSVField(post.position || 'None found in post'),
       escapeCSVField(post.connection_degree || post.connectionDegree || '3rd'),
+      escapeCSVField(generateConnectionMessage(post.name, post.connection_degree || post.connectionDegree, post.title)),
       escapeCSVField(post.posturl || post.postUrl || ''),
       escapeCSVField(post.profileurl || post.linkedin_profile_url || post.linkedinUrl || ''),
       escapeCSVField(post.post_date || post.postDate || ''),

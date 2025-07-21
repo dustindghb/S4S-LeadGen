@@ -21,7 +21,7 @@ window.exportLeadsToCSV = function(leads) {
   }
   
   // Create CSV content
-  const headers = ['Post Order', 'Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Post URL', 'LinkedIn Profile URL', 'Post Date', 'Post Content'];
+  const headers = ['Post Order', 'Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Connection Note', 'Post URL', 'LinkedIn Profile URL', 'Post Date', 'Post Content'];
   const csvRows = [];
   
   // Add headers
@@ -29,13 +29,42 @@ window.exportLeadsToCSV = function(leads) {
   
   // Add data rows
   leads.forEach(lead => {
+    // Generate connection message
+    const isCompanyAccount = lead.title && (lead.title.toLowerCase().includes('company account') || lead.title.toLowerCase().includes('business account'));
+    
+    let firstName = 'there';
+    if (!isCompanyAccount && lead.name) {
+      firstName = lead.name.split(' ')[0];
+    }
+    
+    const connectionDegree = lead.connectionDegree || '3rd';
+    const cleanConnectionDegree = connectionDegree.toLowerCase().replace(/\s+/g, '');
+    
+    let connectionMessage;
+    if (cleanConnectionDegree.includes('2nd') || cleanConnectionDegree.includes('second')) {
+      connectionMessage = `Hi ${firstName},
+
+I am the CEO of Stage 4 Solutions, a consulting and interim staffing company ranked on Inc.5000 list five times. We share many connections on LinkedIn. I noticed your company is growing and thought it would be great to connect.
+
+Thanks!
+Niti`;
+    } else {
+      connectionMessage = `Hi ${firstName},
+
+I am the CEO of Stage 4 Solutions, a consulting and interim staffing company ranked on Inc.5000 list five times. I noticed your company is growing and thought it would be great to connect.
+
+Thanks!
+Niti`;
+    }
+    
     const row = [
-      lead.postOrderText || lead.postOrder || '',
+      lead.postOrder || lead.postOrderText || '',
       lead.name || '',
       lead.title || 'Unknown Title',
       lead.company || 'Unknown Company',
-      lead.position || 'Could not find from post',
+      lead.position || 'None found in post',
       lead.connectionDegree || '3rd',
+      connectionMessage,
       lead.postUrl || lead.post_url || '',
       lead.linkedinUrl || lead.linkedin_profile_url || '',
       lead.postDate || lead.post_date || '',
