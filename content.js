@@ -5,6 +5,11 @@ if (window.s4sContentScriptLoaded) {
   console.log('[S4S] Content script already loaded, skipping');
 } else {
   window.s4sContentScriptLoaded = true;
+  
+  // Add a small delay to ensure the page is fully loaded
+  setTimeout(() => {
+    console.log('[S4S] Content script initialized and ready');
+  }, 500);
 
   // Add timeout wrapper for long-running operations
   function withTimeout(promise, timeoutMs = 30000) {
@@ -1381,7 +1386,7 @@ if (window.s4sContentScriptLoaded) {
       }
 
       if (msg.action === "ping") {
-        sendResponse({ success: true });
+        sendResponse({ success: true, message: "Content script is ready", timestamp: Date.now() });
         return false; // Synchronous response
       }
 
@@ -1394,6 +1399,13 @@ if (window.s4sContentScriptLoaded) {
       if (msg.action === "debugRepostDetection") {
         debugRepostDetection();
         sendResponse({ success: true, message: "Repost debug completed - check console" });
+        return false; // Synchronous response
+      }
+
+      if (msg.action === "testRefresh") {
+        console.log('[S4S] Manual refresh test requested');
+        // This will be handled by the popup script
+        sendResponse({ success: true, message: "Refresh test request received" });
         return false; // Synchronous response
       }
       

@@ -1053,7 +1053,10 @@ JSON:`;
   let allAnalyzedPosts = []; // New: store all posts with their analysis results
   let metricsUpdateInterval = null; // New: interval for frequent metrics updates
   let postLimit = 0; // New: limit for number of posts to analyze
-  let postLimitReached = false; // New: flag to track if post limit has been reached
+  let postLimitReached = false; // New: flag to track if manual post limit has been reached
+  let autoRefreshEnabled = true; // New: enable auto-refresh after 50 posts
+  let refreshCount = 0; // New: track number of refreshes performed
+  let autoRefreshTriggered = false; // New: flag to track if auto-refresh has been triggered
 
   // Helper to save and load leads from chrome.storage
   function saveLeadsToStorage(leads, statusDiv) {
@@ -1439,6 +1442,110 @@ JSON:`;
 
     // Initialize the post limit UI
     updatePostLimitUI();
+    
+    // Set up auto-refresh checkbox
+    const autoRefreshCheckbox = document.getElementById('autoRefreshEnabled');
+    if (autoRefreshCheckbox) {
+      autoRefreshCheckbox.checked = autoRefreshEnabled;
+          autoRefreshCheckbox.addEventListener('change', (e) => {
+      autoRefreshEnabled = e.target.checked;
+      console.log(`[S4S] Auto-refresh ${autoRefreshEnabled ? 'enabled' : 'disabled'}`);
+    });
+
+    // Add auto-refresh posts count functionality
+    const autoRefreshPostsInput = document.getElementById('autoRefreshPosts');
+    if (autoRefreshPostsInput) {
+      autoRefreshPostsInput.addEventListener('change', (e) => {
+        const value = parseInt(e.target.value);
+        if (value >= 10 && value <= 200) {
+          console.log(`[S4S] Auto-refresh posts count changed to: ${value}`);
+        } else {
+          // Reset to valid value
+          e.target.value = 50;
+          console.log('[S4S] Auto-refresh posts count reset to 50 (invalid value)');
+        }
+      });
+    }
+
+    // Add test refresh button functionality
+    const testRefreshBtn = document.getElementById('testRefreshBtn');
+    if (testRefreshBtn) {
+      testRefreshBtn.addEventListener('click', async () => {
+        try {
+          console.log('[S4S] Manual refresh test requested');
+          const tab = await getMostRecentLinkedInTab();
+          if (tab) {
+            testRefreshBtn.textContent = 'Testing...';
+            testRefreshBtn.disabled = true;
+            
+            await refreshAndRestartAnalysis(tab.id, statusDiv, resultsDiv);
+            
+            testRefreshBtn.textContent = 'Test Refresh';
+            testRefreshBtn.disabled = false;
+          } else {
+            console.error('[S4S] No LinkedIn tab found for refresh test');
+            statusDiv.textContent = 'Error: No LinkedIn tab found. Please open a LinkedIn page.';
+          }
+        } catch (error) {
+          console.error('[S4S] Error during manual refresh test:', error);
+          testRefreshBtn.textContent = 'Test Refresh';
+          testRefreshBtn.disabled = false;
+          statusDiv.textContent = 'Error during refresh test. Please try again.';
+        }
+      });
+    }
+
+    // Add test auto-refresh logic button functionality
+    const testAutoRefreshBtn = document.getElementById('testAutoRefreshBtn');
+    if (testAutoRefreshBtn) {
+      testAutoRefreshBtn.addEventListener('click', async () => {
+        try {
+          console.log('[S4S] Testing auto-refresh logic...');
+          const tab = await getMostRecentLinkedInTab();
+          if (tab) {
+            testAutoRefreshBtn.textContent = 'Testing...';
+            testAutoRefreshBtn.disabled = true;
+            
+            // Simulate reaching the auto-refresh threshold
+            const autoRefreshPostsCount = parseInt(document.getElementById('autoRefreshPosts')?.value) || 50;
+            console.log(`[S4S] Simulating auto-refresh trigger at ${autoRefreshPostsCount} posts`);
+            
+            // Manually trigger the auto-refresh logic
+            autoRefreshTriggered = true;
+            refreshCount++;
+            console.log(`[S4S] Auto-refresh triggered manually: ${allAnalyzedPosts.length} posts analyzed (refresh #${refreshCount})`);
+            statusDiv.textContent = `Auto-refresh triggered manually! Analyzed ${allAnalyzedPosts.length} posts. Refreshing page to get fresh content...`;
+            
+            // Stop scrolling first
+            try {
+              await sendMessage(tab.id, { action: "stopScroll" }, 5000);
+            } catch (error) {
+              console.error('[S4S] Error stopping scroll:', error);
+            }
+            
+            // Stop the streaming analysis temporarily
+            stopStreamingAnalysis();
+            
+            // Refresh the page and restart analysis
+            await refreshAndRestartAnalysis(tab.id, statusDiv, resultsDiv);
+            
+            testAutoRefreshBtn.textContent = 'Test Auto-Refresh Logic';
+            testAutoRefreshBtn.disabled = false;
+          } else {
+            console.error('[S4S] No LinkedIn tab found for auto-refresh test');
+            statusDiv.textContent = 'Error: No LinkedIn tab found. Please open a LinkedIn page.';
+            testAutoRefreshBtn.textContent = 'Test Auto-Refresh Logic';
+            testAutoRefreshBtn.disabled = false;
+          }
+        } catch (error) {
+          console.error('[S4S] Error during auto-refresh test:', error);
+          testAutoRefreshBtn.textContent = 'Test Auto-Refresh Logic';
+          testAutoRefreshBtn.disabled = false;
+          statusDiv.textContent = 'Error during auto-refresh test. Please try again.';
+        }
+      });
+    }
+    }
 
     // Restore Start/Stop Scrolling button functionality
     const startBtn = document.getElementById('startScroll');
@@ -1633,7 +1740,7 @@ JSON:`;
   });
 
   // New: Function to analyze a single post in real-time
-  async function analyzeSinglePostStreaming(post, statusDiv, resultsDiv) {
+  async function analyzeSinglePostStreaming(post, statusDiv, resultsDiv, tabId) {
     try {
       // Check if this post was already analyzed to prevent duplicates
       const postId = post.postUrl || post.linkedinUrl || `${post.name}-${post.content?.substring(0, 50)}`;
@@ -1665,12 +1772,56 @@ JSON:`;
       // Add to all analyzed posts
       allAnalyzedPosts.push(analyzedPost);
       
-              // Check if post limit has been reached
-        if (postLimit > 0 && allAnalyzedPosts.length >= postLimit && !postLimitReached) {
-          postLimitReached = true;
-          console.log(`[S4S] Post limit reached: ${allAnalyzedPosts.length}/${postLimit} posts analyzed`);
-          console.log(`[S4S] Total posts found: ${totalPostCount}, Posts analyzed: ${allAnalyzedPosts.length}, Queue size: ${postQueue.length}`);
-          statusDiv.textContent = `Post limit reached! Analyzed ${allAnalyzedPosts.length} posts. Stopping analysis and scrolling.`;
+      // Check if auto-refresh should be triggered (after configurable number of posts)
+      // IMPORTANT: Check auto-refresh BEFORE post limit to ensure it triggers
+      const autoRefreshPostsCount = parseInt(document.getElementById('autoRefreshPosts')?.value) || 50;
+      const autoRefreshCheckbox = document.getElementById('autoRefreshEnabled');
+      const isAutoRefreshEnabled = autoRefreshCheckbox ? autoRefreshCheckbox.checked : autoRefreshEnabled;
+      
+      // Debug logging for auto-refresh check
+      if (allAnalyzedPosts.length % 10 === 0) { // Log every 10 posts to avoid spam
+        console.log(`[S4S] Auto-refresh check - posts analyzed: ${allAnalyzedPosts.length}, threshold: ${autoRefreshPostsCount}, enabled: ${isAutoRefreshEnabled}, triggered: ${autoRefreshTriggered}, post limit: ${postLimit}`);
+      }
+      
+      // Log when we're close to the threshold
+      if (allAnalyzedPosts.length >= autoRefreshPostsCount - 5 && allAnalyzedPosts.length <= autoRefreshPostsCount + 5) {
+        console.log(`[S4S] CLOSE TO AUTO-REFRESH - posts analyzed: ${allAnalyzedPosts.length}, threshold: ${autoRefreshPostsCount}, enabled: ${isAutoRefreshEnabled}, triggered: ${autoRefreshTriggered}`);
+      }
+      
+      if (isAutoRefreshEnabled && allAnalyzedPosts.length >= autoRefreshPostsCount && !autoRefreshTriggered) {
+        console.log(`[S4S] 🚀 AUTO-REFRESH TRIGGERED! Posts analyzed: ${allAnalyzedPosts.length}, threshold: ${autoRefreshPostsCount}`);
+        autoRefreshTriggered = true;
+        refreshCount++;
+        console.log(`[S4S] Auto-refresh triggered: ${allAnalyzedPosts.length} posts analyzed (refresh #${refreshCount})`);
+        console.log(`[S4S] Total posts found: ${totalPostCount}, Posts analyzed: ${allAnalyzedPosts.length}, Queue size: ${postQueue.length}`);
+        console.log(`[S4S] Auto-refresh settings - enabled: ${autoRefreshEnabled}, triggered: ${autoRefreshTriggered}, refresh count: ${refreshCount}`);
+        console.log(`[S4S] Auto-refresh posts count: ${autoRefreshPostsCount}, Post limit: ${postLimit}`);
+        statusDiv.textContent = `Auto-refresh triggered! Analyzed ${allAnalyzedPosts.length} posts. Refreshing page to get fresh content...`;
+        
+        // Stop scrolling first
+        try {
+          const tab = await getMostRecentLinkedInTab();
+          if (tab) {
+            await sendMessage(tab.id, { action: "stopScroll" }, 5000);
+          }
+        } catch (error) {
+          console.error('[S4S] Error stopping scroll:', error);
+        }
+        
+        // Stop the streaming analysis temporarily
+        stopStreamingAnalysis();
+        
+        // Refresh the page and restart analysis
+        await refreshAndRestartAnalysis(tabId, statusDiv, resultsDiv);
+        return false;
+      }
+      
+      // Check if manual post limit has been reached (only if auto-refresh didn't trigger)
+      if (postLimit > 0 && allAnalyzedPosts.length >= postLimit && !postLimitReached && !autoRefreshTriggered) {
+        postLimitReached = true;
+        console.log(`[S4S] Manual post limit reached: ${allAnalyzedPosts.length}/${postLimit} posts analyzed`);
+        console.log(`[S4S] Total posts found: ${totalPostCount}, Posts analyzed: ${allAnalyzedPosts.length}, Queue size: ${postQueue.length}`);
+        statusDiv.textContent = `Post limit reached! Analyzed ${allAnalyzedPosts.length} posts. Stopping analysis and scrolling.`;
         
         // Stop scrolling first
         try {
@@ -1824,7 +1975,7 @@ JSON:`;
         }
         
         // Process the queue
-        await processQueue(statusDiv, resultsDiv);
+        await processQueue(statusDiv, resultsDiv, tabId);
         
         // Update extracted posts
         extractedPosts = newPosts;
@@ -1839,11 +1990,16 @@ JSON:`;
   }
 
   // New: Function to start streaming analysis
-  async function startStreamingAnalysis(tabId, statusDiv, resultsDiv) {
+  async function startStreamingAnalysis(tabId, statusDiv, resultsDiv, preserveLeads = false) {
     isStreamingAnalysis = true;
     isScrollingActive = true;
     allPostsProcessed = false;
-    streamingLeads = [];
+    
+    // Only reset leads if this is a fresh start (not after refresh)
+    if (!preserveLeads) {
+      streamingLeads = [];
+    }
+    
     processedPostCount = 0;
     totalPostCount = 0;
     postOrderCounter = 0; // Reset post order counter
@@ -1860,6 +2016,7 @@ JSON:`;
     updateDateFilterUI();
     updatePostLimitUI(); // Update post limit UI after reset
     postLimitReached = false; // Reset post limit reached flag
+    autoRefreshTriggered = false; // Reset auto-refresh flag
     metricsUpdateInterval = null; // Reset metrics interval
     
     // Show metrics
@@ -1940,10 +2097,25 @@ JSON:`;
         analysisStatusSpan.style.color = '#28a745';
       } else if (isStreamingAnalysis) {
         if (isScrollingActive) {
-          analysisStatusSpan.textContent = `Scrolling & Analyzing (Q:${postQueue.length}, B:${optimalBatchSize})`;
+          const refreshText = refreshCount > 0 ? ` (R:${refreshCount})` : '';
+          let statusText = `Scrolling & Analyzing (Q:${postQueue.length}, B:${optimalBatchSize})${refreshText}`;
+          
+          // Add auto-refresh indicator
+          if (autoRefreshEnabled && !autoRefreshTriggered && allAnalyzedPosts.length > 0) {
+            const autoRefreshPostsCount = parseInt(document.getElementById('autoRefreshPosts')?.value) || 50;
+            const postsUntilRefresh = autoRefreshPostsCount - allAnalyzedPosts.length;
+            if (postsUntilRefresh > 0) {
+              statusText += ` (${postsUntilRefresh} until refresh)`;
+            } else if (postsUntilRefresh <= 0) {
+              statusText += ` (refresh pending)`;
+            }
+          }
+          
+          analysisStatusSpan.textContent = statusText;
           analysisStatusSpan.style.color = '#007bff';
         } else {
-          analysisStatusSpan.textContent = `Analyzing Remaining (Q:${postQueue.length}, B:${optimalBatchSize})`;
+          const refreshText = refreshCount > 0 ? ` (R:${refreshCount})` : '';
+          analysisStatusSpan.textContent = `Analyzing Remaining (Q:${postQueue.length}, B:${optimalBatchSize})${refreshText}`;
           analysisStatusSpan.style.color = '#ffc107';
         }
       } else {
@@ -1980,6 +2152,126 @@ JSON:`;
     console.log('[S4S] Streaming analysis stopped by user');
     updateMetrics();
     ensureButtonStates(); // Ensure buttons are in correct state
+  }
+
+  // New: Function to refresh page and restart analysis
+  async function refreshAndRestartAnalysis(tabId, statusDiv, resultsDiv) {
+    try {
+      console.log('[S4S] Starting page refresh and analysis restart...');
+      
+      // Save current leads to storage before refresh
+      if (streamingLeads.length > 0) {
+        await saveLeadsToStorage(streamingLeads, statusDiv);
+        console.log(`[S4S] Saved ${streamingLeads.length} leads to storage before refresh`);
+      }
+      
+      // Refresh the page
+      statusDiv.textContent = 'Refreshing LinkedIn page...';
+      await chrome.tabs.reload(tabId);
+      
+      // Wait for page to load (increased wait time for better reliability)
+      statusDiv.textContent = 'Waiting for page to load after refresh...';
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Increased from 3s to 5s
+      
+      // Wait for content script to be ready with more robust retry logic
+      let retries = 0;
+      const maxRetries = 20; // Increased from 15 to 20
+      while (retries < maxRetries) {
+        try {
+          const response = await sendMessage(tabId, { action: "ping" }, 3000); // Increased timeout
+          if (response && response.success) {
+            console.log('[S4S] Content script ready after refresh');
+            break;
+          }
+        } catch (error) {
+          console.log(`[S4S] Content script not ready yet, retry ${retries + 1}/${maxRetries}`);
+          
+          // Try to inject content script manually if it's not responding
+          if (retries > 5) {
+            console.log('[S4S] Attempting manual content script injection...');
+            try {
+              await chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                files: ['content.js']
+              });
+              console.log('[S4S] Manual content script injection completed');
+              // Wait a bit more after injection
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            } catch (injectionError) {
+              console.log('[S4S] Manual injection failed:', injectionError);
+            }
+          }
+        }
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Increased wait time
+        retries++;
+      }
+      
+      if (retries >= maxRetries) {
+        console.error('[S4S] Content script failed to load after refresh');
+        statusDiv.textContent = 'Error: Page failed to load properly after refresh. Please try again.';
+        return;
+      }
+      
+      // Reset analysis state for fresh start (but preserve leads)
+      postLimitReached = false;
+      autoRefreshTriggered = false; // Reset auto-refresh flag so it can trigger again
+      analyzedPostCounter = 0;
+      processedPostCount = 0;
+      totalPostCount = 0;
+      processedPostIds.clear();
+      analysisIterationCount = 0;
+      postQueue = [];
+      isProcessingQueue = false;
+      optimalBatchSize = 3;
+      lastProcessingTime = 0;
+      allAnalyzedPosts = [];
+      
+      // Restore leads from storage to maintain continuity
+      try {
+        const restoredLeads = await loadLeadsFromStorage(statusDiv);
+        if (restoredLeads && restoredLeads.length > 0) {
+          streamingLeads = restoredLeads;
+          console.log(`[S4S] Restored ${streamingLeads.length} leads from storage after refresh`);
+          statusDiv.textContent = `Restored ${streamingLeads.length} leads from previous analysis. Restarting analysis...`;
+        } else {
+          console.log('[S4S] No leads found in storage to restore');
+        }
+      } catch (error) {
+        console.error('[S4S] Error restoring leads from storage:', error);
+      }
+      
+      // Restart streaming analysis
+      statusDiv.textContent = `Restarting analysis after refresh #${refreshCount}...`;
+      console.log('[S4S] Restarting streaming analysis after refresh');
+      
+      // Start fresh analysis (but preserve leads from previous refresh)
+      await startStreamingAnalysis(tabId, statusDiv, resultsDiv, true);
+      
+      // Wait a bit longer before restarting scrolling to ensure analysis is fully ready
+      setTimeout(async () => {
+        try {
+          statusDiv.textContent = `Restarting scrolling after refresh #${refreshCount}...`;
+          console.log('[S4S] Restarting scrolling after refresh');
+          
+          // Start scrolling again
+          await sendMessage(tabId, { action: "performSingleScroll" }, 120000); // 2 minutes
+          
+          statusDiv.textContent = `Scrolling restarted after refresh #${refreshCount}. Analysis continues...`;
+          console.log('[S4S] Scrolling successfully restarted after refresh');
+        } catch (error) {
+          console.error('[S4S] Error restarting scrolling after refresh:', error);
+          statusDiv.textContent = 'Error restarting scrolling after refresh. Analysis continues without scrolling.';
+        }
+      }, 3000); // Increased from 2s to 3s
+      
+      statusDiv.textContent = `Analysis restarted after refresh #${refreshCount}. Preparing to restart scrolling...`;
+      console.log('[S4S] Analysis successfully restarted after refresh');
+      
+    } catch (error) {
+      console.error('[S4S] Error during refresh and restart:', error);
+      statusDiv.textContent = 'Error during page refresh. Please try again.';
+      ensureButtonStates();
+    }
   }
 
   // New: Function to ensure button states are correct
@@ -2094,7 +2386,7 @@ Niti`;
   }
 
   // New: Function to process the queue with parallel processing and smart batching
-  async function processQueue(statusDiv, resultsDiv) {
+  async function processQueue(statusDiv, resultsDiv, tabId) {
     if (isProcessingQueue || postQueue.length === 0) {
       return;
     }
@@ -2125,7 +2417,7 @@ Niti`;
         console.log(`[S4S] Processing post ${allAnalyzedPosts.length + 1}/${totalPostCount}: ${post.name}`);
         
         try {
-          const result = await analyzeSinglePostStreaming(post, statusDiv, resultsDiv);
+          const result = await analyzeSinglePostStreaming(post, statusDiv, resultsDiv, tabId);
           // Update metrics after each post analysis
           updateMetrics();
           return result;

@@ -12,6 +12,24 @@ chrome.action.onClicked.addListener((tab) => {
   });
 });
 
+// Listen for tab updates to ensure content script is injected after page refresh
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url && tab.url.includes('linkedin.com')) {
+    console.log('[S4S] LinkedIn page loaded, ensuring content script is injected');
+    // Small delay to ensure page is fully loaded
+    setTimeout(() => {
+      chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        files: ['content.js']
+      }).then(() => {
+        console.log('[S4S] Content script injected after page load');
+      }).catch(err => {
+        console.log('[S4S] Content script injection failed:', err);
+      });
+    }, 1000);
+  }
+});
+
 // Handle messages from popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background script received message:', message);

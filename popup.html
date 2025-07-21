@@ -339,6 +339,67 @@
               Leave empty to analyze all posts. Enter a number to stop analysis after N posts have been analyzed.
             </div>
           </div>
+          
+          <div class="filter-group">
+            <label>Auto-Refresh Settings:</label>
+            <div class="filter-input-group">
+              <input
+                type="checkbox"
+                id="autoRefreshEnabled"
+                checked
+                style="margin-right: 8px;"
+              >
+              <span>Enable auto-refresh</span>
+            </div>
+            <div class="filter-input-group" style="margin-top: 8px;">
+              <label style="margin-right: 8px; font-size: 12px;">Posts before refresh:</label>
+              <input
+                type="number"
+                id="autoRefreshPosts"
+                value="50"
+                min="10"
+                max="200"
+                style="width: 60px; padding: 4px; font-size: 12px;"
+                title="Number of posts to analyze before refreshing the page"
+              >
+            </div>
+            <div class="filter-help">
+              Automatically refresh the page after analyzing the specified number of posts to get fresh content. This is more efficient as most hiring posts are in the first 50 posts.
+            </div>
+            <div style="margin-top: 10px;">
+              <button
+                id="testRefreshBtn"
+                style="
+                  background: #6c757d;
+                  color: white;
+                  border: none;
+                  padding: 8px 16px;
+                  border-radius: 4px;
+                  cursor: pointer;
+                  font-size: 12px;
+                  margin-right: 8px;
+                "
+                title="Test the refresh functionality manually"
+              >
+                Test Refresh
+              </button>
+              <button
+                id="testAutoRefreshBtn"
+                style="
+                  background: #dc3545;
+                  color: white;
+                  border: none;
+                  padding: 8px 16px;
+                  border-radius: 4px;
+                  cursor: pointer;
+                  font-size: 12px;
+                "
+                title="Test auto-refresh logic (simulates reaching post threshold)"
+              >
+                Test Auto-Refresh Logic
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

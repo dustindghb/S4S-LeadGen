@@ -34,10 +34,56 @@ The extension now shows live metrics during analysis:
 - **Posts Found**: Total posts discovered on the page
 - **Posts Analyzed**: Posts that have been sent to Ollama for analysis
 - **Leads Found**: Hiring posts that have been identified and enriched with title/company data
+
+### Auto-Refresh Feature
+
+The extension includes an intelligent auto-refresh feature that automatically refreshes the LinkedIn page after analyzing 50 posts. This is based on the observation that the most relevant hiring posts are typically found in the first 50 posts of a LinkedIn feed.
+
+**How it works:**
+1. **Automatic Trigger**: When 50 posts have been analyzed, the extension automatically refreshes the page
+2. **Fresh Content**: After refresh, the extension waits for the page to load and content script to be ready
+3. **Seamless Continuation**: Analysis and scrolling automatically resume with fresh content
+4. **Progress Tracking**: The refresh count is displayed in the metrics (e.g., "R:2" means 2 refreshes have occurred)
+
+**Benefits:**
+- **More Efficient**: Focuses on the most relevant posts (first 50) rather than scrolling through stale content
+- **Better Lead Quality**: Fresh content typically contains more recent hiring posts
+- **Time Saving**: Avoids analyzing posts that are less likely to be relevant
+- **Continuous Operation**: No manual intervention required
+
+**Configuration:**
+- **Enable/Disable**: Use the "Enable auto-refresh" checkbox in the filters section
+- **Manual Test**: Use the "Test Refresh" button to manually test the refresh functionality
+- **Status Indicator**: The metrics show how many posts remain until the next refresh
+
+**Troubleshooting:**
+If the auto-refresh isn't working:
+1. Ensure the "Enable auto-refresh" checkbox is checked
+2. Check the browser console for any error messages
+3. Use the "Test Refresh" button to manually test the functionality
+4. Make sure you're on a LinkedIn feed page (not a profile or other page)
 - **Analysis Status**: 
   - "Scrolling & Analyzing": Active scrolling and analysis
   - "Analyzing Remaining": Scrolling stopped, continuing to analyze remaining posts
   - "Complete": All posts have been analyzed
+  - Refresh count shown as (R:X) when auto-refresh is active
+
+### Auto-Refresh Feature
+
+The extension now includes an intelligent auto-refresh feature that automatically refreshes the LinkedIn page after analyzing 50 posts. This is based on the observation that the most relevant hiring posts are usually found within the first 50 posts of a feed.
+
+**How it works:**
+1. **Automatic Trigger**: After analyzing 50 posts, the extension automatically refreshes the page
+2. **State Preservation**: All found leads are saved to storage before the refresh
+3. **Seamless Restart**: Analysis automatically restarts after the page loads
+4. **Refresh Counter**: The analysis status shows how many refreshes have occurred (R:1, R:2, etc.)
+5. **Configurable**: You can disable auto-refresh using the checkbox in the filters section
+
+**Benefits:**
+- **More Efficient**: Focuses on fresh, relevant content rather than old posts
+- **Better Results**: Most hiring posts are in the first 50 posts, so this maximizes lead discovery
+- **Continuous Operation**: Runs indefinitely, refreshing and analyzing fresh content
+- **No Data Loss**: All leads are preserved across refreshes
 
 ### Requirements
 
