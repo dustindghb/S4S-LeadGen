@@ -1621,6 +1621,18 @@ JSON:`;
           position: titleCompanyData.position || 'No hiring position found from post'
         };
         
+        // Check if this lead was already added to prevent duplicates
+        const leadId = enrichedPost.postUrl || enrichedPost.linkedinUrl || `${enrichedPost.name}-${enrichedPost.content?.substring(0, 50)}`;
+        const alreadyAdded = streamingLeads.some(lead => {
+          const existingLeadId = lead.postUrl || lead.linkedinUrl || `${lead.name}-${lead.content?.substring(0, 50)}`;
+          return existingLeadId === leadId;
+        });
+        
+        if (alreadyAdded) {
+          console.log(`[S4S] Lead already added, skipping: ${enrichedPost.name}`);
+          return true; // Still return true since it was a valid lead
+        }
+        
         // Add to streaming leads
         streamingLeads.push(enrichedPost);
         
@@ -1713,6 +1725,13 @@ JSON:`;
         
         console.log(`[S4S] Streaming: Found ${newPosts.length} total posts (was ${previousCount}), Queue size: ${postQueue.length}, Analyzed: ${allAnalyzedPosts.length}, Analysis running: ${isStreamingAnalysis}, Scrolling active: ${isScrollingActive}`);
         
+        // Log discrepancy explanation
+        const discrepancy = newPosts.length - allAnalyzedPosts.length;
+        if (discrepancy > 0) {
+          console.log(`[S4S] Post count discrepancy: ${discrepancy} posts (${newPosts.length} found - ${allAnalyzedPosts.length} analyzed)`);
+          console.log(`[S4S] Reasons: ${postQueue.length} in queue, ${processedPostCount - allAnalyzedPosts.length} duplicates filtered`);
+        }
+        
         // Process the queue
         await processQueue(statusDiv, resultsDiv);
         
@@ -1802,7 +1821,8 @@ JSON:`;
     const analysisStatusSpan = document.getElementById('analysisStatus');
     
     if (metricsDiv && postsFoundSpan && postsAnalyzedSpan && leadsFoundSpan && analysisStatusSpan) {
-      postsFoundSpan.textContent = totalPostCount;
+      // Show posts found vs analyzed with more context
+      postsFoundSpan.textContent = `${totalPostCount} (${postQueue.length} queued)`;
       postsAnalyzedSpan.textContent = allAnalyzedPosts.length;
       
       // Check if date filter is active
@@ -2086,6 +2106,110 @@ JSON:`;
     console.log('Filtered posts:', filtered);
     
     return filtered;
+  };
+
+  // Debug function to understand post processing discrepancy
+  window.debugPostProcessing = function() {
+    console.log('=== POST PROCESSING DEBUG ===');
+    console.log('Total posts found on page:', totalPostCount);
+    console.log('Posts in queue:', postQueue.length);
+    console.log('Posts analyzed:', allAnalyzedPosts.length);
+    console.log('Posts processed (including duplicates):', processedPostCount);
+    console.log('Processed post IDs:', Array.from(processedPostIds));
+    console.log('Queue contents:', postQueue.map(p => p.name));
+    console.log('Analyzed posts:', allAnalyzedPosts.map(p => p.name));
+    
+    const discrepancy = totalPostCount - allAnalyzedPosts.length;
+    console.log(`Discrepancy: ${discrepancy} posts (${totalPostCount} found - ${allAnalyzedPosts.length} analyzed)`);
+    
+    if (discrepancy > 0) {
+      console.log('Possible reasons for discrepancy:');
+      console.log('1. Posts still in queue:', postQueue.length);
+      console.log('2. Duplicate posts filtered out:', processedPostCount - allAnalyzedPosts.length);
+      console.log('3. Analysis failures or timeouts');
+      console.log('4. Posts found faster than they can be analyzed');
+    }
+    
+    return {
+      totalFound: totalPostCount,
+      inQueue: postQueue.length,
+      analyzed: allAnalyzedPosts.length,
+      processed: processedPostCount,
+      discrepancy: discrepancy
+    };
+  };
+
+  // Debug function to check for duplicate leads
+  window.debugLeadDuplicates = function() {
+    console.log('=== LEAD DUPLICATES DEBUG ===');
+    console.log('Total leads found:', streamingLeads.length);
+    
+    // Check for duplicates by post URL
+    const leadIds = streamingLeads.map(lead => {
+      return lead.postUrl || lead.linkedinUrl || `${lead.name}-${lead.content?.substring(0, 50)}`;
+    });
+    
+    const duplicates = leadIds.filter((id, index) => leadIds.indexOf(id) !== index);
+    const uniqueIds = [...new Set(leadIds)];
+    
+    console.log('Unique lead IDs:', uniqueIds.length);
+    console.log('Duplicate IDs found:', duplicates.length);
+    
+    if (duplicates.length > 0) {
+      console.log('Duplicate IDs:', duplicates);
+      
+      // Show which leads are duplicates
+      const duplicateLeads = streamingLeads.filter((lead, index) => {
+        const leadId = lead.postUrl || lead.linkedinUrl || `${lead.name}-${lead.content?.substring(0, 50)}`;
+        return leadIds.indexOf(leadId) !== index;
+      });
+      
+      console.log('Duplicate leads:', duplicateLeads.map(l => ({ name: l.name, postUrl: l.postUrl })));
+    }
+    
+    return {
+      totalLeads: streamingLeads.length,
+      uniqueLeads: uniqueIds.length,
+      duplicates: duplicates.length,
+      duplicateIds: duplicates
+    };
+  };
+
+  // Function to remove duplicate leads from streamingLeads
+  window.removeDuplicateLeads = function() {
+    console.log('=== REMOVING DUPLICATE LEADS ===');
+    const originalCount = streamingLeads.length;
+    
+    // Create a map to track unique leads by ID
+    const uniqueLeadsMap = new Map();
+    
+    streamingLeads.forEach(lead => {
+      const leadId = lead.postUrl || lead.linkedinUrl || `${lead.name}-${lead.content?.substring(0, 50)}`;
+      
+      if (!uniqueLeadsMap.has(leadId)) {
+        uniqueLeadsMap.set(leadId, lead);
+      } else {
+        console.log(`[S4S] Removing duplicate lead: ${lead.name}`);
+      }
+    });
+    
+    // Replace streamingLeads with unique leads
+    streamingLeads = Array.from(uniqueLeadsMap.values());
+    
+    const newCount = streamingLeads.length;
+    const removedCount = originalCount - newCount;
+    
+    console.log(`[S4S] Removed ${removedCount} duplicate leads (${originalCount} -> ${newCount})`);
+    
+    // Update metrics and storage
+    updateMetrics();
+    saveLeadsToStorage(streamingLeads, null);
+    
+    return {
+      originalCount,
+      newCount,
+      removedCount
+    };
   };
 
   // Test function for position extraction (can be called from console)
