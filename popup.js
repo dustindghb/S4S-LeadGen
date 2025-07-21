@@ -660,28 +660,41 @@ RESPONSE: Return ONLY "YES" or "NO"`;
     // Log the full content for debugging
     console.log(`[S4S] Full post content for position extraction:`, post.content);
     
-    const positionPrompt = `You are an expert at analyzing LinkedIn hiring posts to extract the exact job position being hired for.
+    const positionPrompt = `You are an expert at analyzing LinkedIn hiring posts to extract the exact job positions being hired for.
 
-Analyze this LinkedIn post content and extract the specific job position:
+Analyze this LinkedIn post content and extract ALL specific job positions:
 
 POST CONTENT: ${post.content}
 
 CRITICAL INSTRUCTIONS:
-1. Look for EXACT job titles mentioned in the text
-2. Extract the job title exactly as written (e.g., "VP of Merchandising", "Senior Software Engineer")
-3. Look for job titles after phrases like "looking for", "seeking", "hiring for", "we are looking for"
-4. Pay attention to job titles in quotes or emphasized text
-5. If multiple positions are mentioned, choose the most specific/senior one
-6. Only return empty string if no specific job title can be identified
+1. Use your reasoning to identify ANY job titles mentioned in the text, regardless of how they appear
+2. Extract ALL job titles exactly as written (e.g., "VP of Merchandising", "Senior Software Engineer")
+3. Look for job titles in any context - they might appear:
+   - After hiring phrases like "looking for", "seeking", "hiring for", "actively seeking"
+   - Directly in the text as standalone job titles
+   - In the middle of sentences describing the role
+   - In lists of multiple positions
+   - In emphasized or quoted text
+4. Pay attention to job titles that appear naturally in the text, even without obvious hiring language
+5. If multiple positions are mentioned, list ALL of them separated by commas
+6. Only return "Could not find from post" if no specific job title can be identified
 
 EXAMPLES:
 - "We are looking for a passionate VP of Merchandising" → "VP of Merchandising"
 - "Hiring Senior Software Engineers" → "Senior Software Engineer"
 - "Seeking Marketing Manager for our team" → "Marketing Manager"
 - "Looking for someone to join our sales team" → "Sales Representative"
-- "We're growing and need help" → "" (too vague)
+- "We're hiring for Software Engineers, Product Managers, and UX Designers" → "Software Engineers, Product Managers, UX Designers"
+- "Multiple openings: Frontend Developer, Backend Developer, DevOps Engineer" → "Frontend Developer, Backend Developer, DevOps Engineer"
+- "Boeing is actively seeking a Senior Manager, Small Business Subcontracting" → "Senior Manager, Small Business Subcontracting"
+- "Senior Manager, Small Business Subcontracting to join our dynamic team" → "Senior Manager, Small Business Subcontracting"
+- "We need a Data Scientist who can..." → "Data Scientist"
+- "Join us as a Product Manager" → "Product Manager"
+- "We're growing and need help" → "Could not find from post" (too vague)
 
-Return ONLY the job title as a string, or empty string if no specific job title found:`;
+Use your reasoning to identify job titles in any context, not just after specific trigger phrases.
+
+Return ONLY the job titles as a string (comma-separated if multiple), or "Could not find from post" if no specific job title found:`;
 
     console.log(`[S4S] Sending position extraction prompt to AI`);
 
@@ -760,6 +773,15 @@ Return ONLY the job title as a string, or empty string if no specific job title 
 
 HEADLINE: ${headlineText}
 
+IMPORTANT RULES:
+1. Sometimes the headline contains just a company name (like "Acme Corporation" or "Tech Solutions Inc") which means this post is from the company's official LinkedIn account. In such cases:
+   - Put the company name in the "company" field
+   - Put "Company Account" in the "title" field
+
+2. IGNORE follower counts, numbers, and metadata like "1,234 followers" or "500+ connections"
+
+3. Focus on the actual company name or job title, not LinkedIn metrics
+
 Return JSON only:
 {"title": "job title", "company": "company name"}
 
@@ -767,6 +789,10 @@ Examples:
 "Software Engineer at Google" -> {"title": "Software Engineer", "company": "Google"}
 "Marketing Manager, Apple" -> {"title": "Marketing Manager", "company": "Apple"}
 "CEO • Startup" -> {"title": "CEO", "company": "Startup"}
+"Acme Corporation" -> {"title": "Company Account", "company": "Acme Corporation"}
+"Tech Solutions Inc" -> {"title": "Company Account", "company": "Tech Solutions Inc"}
+"Acme Corp • 1,234 followers" -> {"title": "Company Account", "company": "Acme Corp"}
+"Tech Solutions • 500+ connections" -> {"title": "Company Account", "company": "Tech Solutions"}
 
 JSON:`;
 
@@ -984,6 +1010,8 @@ JSON:`;
   let scrollAbortController = null;
   let streamingLeads = []; // New: store leads found during streaming
   let isStreamingAnalysis = false; // New: track if we're doing streaming analysis
+  let postOrderCounter = 0; // New: track the order of posts discovered
+  let buttonHealthInterval = null; // New: interval to check button health
   let processedPostCount = 0; // New: track processed posts
   let totalPostCount = 0; // New: track total posts found
   let streamingAnalysisInterval = null; // New: store the analysis interval
@@ -1023,6 +1051,24 @@ JSON:`;
       });
     });
   }
+
+  // Global error handler to prevent UI from becoming unresponsive
+  window.addEventListener('error', function(event) {
+    console.error('[S4S] Global error caught:', event.error);
+    // Ensure buttons are re-enabled if there's an error
+    setTimeout(() => {
+      ensureButtonStates();
+    }, 1000);
+  });
+
+  // Global unhandled promise rejection handler
+  window.addEventListener('unhandledrejection', function(event) {
+    console.error('[S4S] Unhandled promise rejection:', event.reason);
+    // Ensure buttons are re-enabled if there's an error
+    setTimeout(() => {
+      ensureButtonStates();
+    }, 1000);
+  });
 
   document.addEventListener('DOMContentLoaded', function() {
     const controlsDiv = document.getElementById('controls');
@@ -1448,6 +1494,7 @@ JSON:`;
 
     stopBtn.addEventListener('click', async () => {
       try {
+        console.log('[S4S] Stop scrolling button clicked');
         startBtn.disabled = false;
         stopBtn.disabled = true;
         statusDiv.textContent = 'Stopping scrolling...';
@@ -1455,6 +1502,7 @@ JSON:`;
         const tab = await getMostRecentLinkedInTab();
         if (!tab) {
           statusDiv.textContent = 'No LinkedIn tab found. Please open a LinkedIn page.';
+          ensureButtonStates(); // Ensure buttons are in correct state
           return;
         }
         const tabId = tab.id;
@@ -1467,13 +1515,17 @@ JSON:`;
         
         statusDiv.textContent = 'Scrolling stopped. Analysis continues with remaining posts...';
         updateMetrics();
+        ensureButtonStates(); // Ensure buttons are in correct state
       } catch (error) {
+        console.error('[S4S] Error in stop scrolling:', error);
         statusDiv.textContent = 'Error: ' + error.message;
+        ensureButtonStates(); // Ensure buttons are in correct state even on error
       }
     });
 
     stopAnalysisBtn.addEventListener('click', async () => {
       try {
+        console.log('[S4S] Stop analysis button clicked');
         stopAnalysisBtn.disabled = true;
         statusDiv.textContent = 'Stopping analysis...';
         
@@ -1482,8 +1534,11 @@ JSON:`;
         
         statusDiv.textContent = 'Analysis stopped. Scrolling continues...';
         updateMetrics();
+        ensureButtonStates(); // Ensure buttons are in correct state
       } catch (error) {
+        console.error('[S4S] Error in stop analysis:', error);
         statusDiv.textContent = 'Error: ' + error.message;
+        ensureButtonStates(); // Ensure buttons are in correct state even on error
       }
     });
 
@@ -1618,7 +1673,7 @@ JSON:`;
           ...analyzedPost,
           title: titleCompanyData.title,
           company: titleCompanyData.company,
-          position: titleCompanyData.position || 'No hiring position found from post'
+          position: titleCompanyData.position || 'Could not find from post'
         };
         
         // Check if this lead was already added to prevent duplicates
@@ -1633,8 +1688,14 @@ JSON:`;
           return true; // Still return true since it was a valid lead
         }
         
-        // Add to streaming leads
-        streamingLeads.push(enrichedPost);
+        // Add to streaming leads with post order
+        postOrderCounter++;
+        const enrichedPostWithOrder = {
+          ...enrichedPost,
+          postOrder: postOrderCounter,
+          postOrderText: `${postOrderCounter}/${totalPostCount}`
+        };
+        streamingLeads.push(enrichedPostWithOrder);
         
         // Update status and metrics immediately
         const positionText = titleCompanyData.position ? ` (${titleCompanyData.position})` : ' (No specific position found)';
@@ -1755,6 +1816,7 @@ JSON:`;
     streamingLeads = [];
     processedPostCount = 0;
     totalPostCount = 0;
+    postOrderCounter = 0; // Reset post order counter
     processedPostIds.clear(); // Reset processed posts tracking
     analysisIterationCount = 0; // Reset iteration count
     postQueue = []; // Reset the queue
@@ -1808,6 +1870,9 @@ JSON:`;
         updateMetrics();
       }
     }, 500); // Update metrics every 500ms for smooth display
+    
+    // Start button health monitoring
+    startButtonHealthMonitoring();
     
     return streamingAnalysisInterval;
   }
@@ -1877,8 +1942,74 @@ JSON:`;
       clearInterval(metricsUpdateInterval);
       metricsUpdateInterval = null;
     }
+    if (buttonHealthInterval) {
+      clearInterval(buttonHealthInterval);
+      buttonHealthInterval = null;
+    }
     console.log('[S4S] Streaming analysis stopped by user');
     updateMetrics();
+    ensureButtonStates(); // Ensure buttons are in correct state
+  }
+
+  // New: Function to ensure button states are correct
+  function ensureButtonStates() {
+    const startBtn = document.getElementById('startScroll');
+    const stopBtn = document.getElementById('stopScroll');
+    const stopAnalysisBtn = document.getElementById('stopAnalysis');
+    
+    if (!startBtn || !stopBtn || !stopAnalysisBtn) {
+      console.error('[S4S] Button elements not found during state check');
+      return;
+    }
+    
+    // Ensure buttons are enabled/disabled based on current state
+    if (isStreamingAnalysis) {
+      // Analysis is running
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      stopAnalysisBtn.disabled = false;
+    } else {
+      // Analysis is stopped
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      stopAnalysisBtn.disabled = true;
+    }
+    
+    // Force re-enable if buttons seem stuck
+    if (startBtn.disabled && !isStreamingAnalysis) {
+      console.log('[S4S] Re-enabling start button');
+      startBtn.disabled = false;
+    }
+    if (stopBtn.disabled && isStreamingAnalysis) {
+      console.log('[S4S] Re-enabling stop button');
+      stopBtn.disabled = false;
+    }
+    if (stopAnalysisBtn.disabled && isStreamingAnalysis) {
+      console.log('[S4S] Re-enabling stop analysis button');
+      stopAnalysisBtn.disabled = false;
+    }
+  }
+
+  // New: Function to start button health monitoring
+  function startButtonHealthMonitoring() {
+    if (buttonHealthInterval) {
+      clearInterval(buttonHealthInterval);
+    }
+    
+    buttonHealthInterval = setInterval(() => {
+      ensureButtonStates();
+    }, 2000); // Check every 2 seconds
+    
+    console.log('[S4S] Started button health monitoring');
+  }
+
+  // New: Function to stop button health monitoring
+  function stopButtonHealthMonitoring() {
+    if (buttonHealthInterval) {
+      clearInterval(buttonHealthInterval);
+      buttonHealthInterval = null;
+    }
+    console.log('[S4S] Stopped button health monitoring');
   }
 
   // New: Function to add posts to the processing queue
@@ -2343,7 +2474,7 @@ JSON:`;
       'post_date',
       'post_content'
     ];
-    const header = ['Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
+    const header = ['Post Order', 'Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
     function escapeCSVField(field) {
       if (field === null || field === undefined) return '';
       const str = String(field);
@@ -2363,10 +2494,11 @@ JSON:`;
     }
     // Map each lead to the correct keys, with fallback for profileurl, post_content, and posturl
     const rows = filteredLeads.map(lead => [
+      escapeCSVField(lead.postOrderText || lead.postOrder || ''),
       escapeCSVField(lead.name || ''),
       escapeCSVField(lead.title || 'Unknown Title'),
       escapeCSVField(lead.company || 'Unknown Company'),
-      escapeCSVField(lead.position || 'No hiring position found from post'),
+      escapeCSVField(lead.position || 'Could not find from post'),
       escapeCSVField(lead.connection_degree || lead.connectionDegree || '3rd'),
       escapeCSVField(lead.posturl || lead.postUrl || ''),
       escapeCSVField(lead.profileurl || lead.linkedin_profile_url || lead.linkedinUrl || ''),
@@ -2407,6 +2539,7 @@ JSON:`;
     }
     
     const header = [
+      'Post Order', 
       'Name', 
       'Headline', 
       'Is Hiring', 
@@ -2442,12 +2575,13 @@ JSON:`;
     
     // Map each analyzed post to CSV row
     const rows = filteredPosts.map(post => [
+      escapeCSVField(post.postOrderText || post.postOrder || ''),
       escapeCSVField(post.name || ''),
       escapeCSVField(post.headline || ''),
       escapeCSVField(post.isHiring ? 'YES' : 'NO'),
       escapeCSVField(post.title || ''),
       escapeCSVField(post.company || ''),
-      escapeCSVField(post.position || 'No hiring position found from post'),
+      escapeCSVField(post.position || 'Could not find from post'),
       escapeCSVField(post.connection_degree || post.connectionDegree || '3rd'),
       escapeCSVField(post.posturl || post.postUrl || ''),
       escapeCSVField(post.profileurl || post.linkedin_profile_url || post.linkedinUrl || ''),

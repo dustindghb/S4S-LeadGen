@@ -147,6 +147,67 @@
         text-align: center;
         margin: 15px 0;
       }
+      
+      /* New compact filter section styles */
+      .filters-section {
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 15px;
+        margin: 15px 0;
+      }
+      .filters-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+        margin-bottom: 10px;
+      }
+      .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .filter-group label {
+        font-weight: 600;
+        color: #495057;
+        font-size: 13px;
+        margin: 0;
+      }
+      .filter-input-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .filter-input-group input {
+        width: 70px;
+        padding: 6px 8px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 13px;
+        text-align: center;
+      }
+      .filter-input-group span {
+        color: #6c757d;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .filter-input-group button {
+        width: auto;
+        padding: 6px 10px;
+        font-size: 11px;
+        margin: 0;
+        background: #6c757d;
+      }
+      .filter-input-group button:hover {
+        background: #5a6268;
+      }
+      .filter-help {
+        font-size: 11px;
+        color: #6c757d;
+        margin-top: 5px;
+        line-height: 1.3;
+      }
+      
       .prompt-row {
         display: flex;
         align-items: flex-start;
@@ -240,6 +301,47 @@
         </button>
       </div>
 
+      <!-- New Compact Filters Section -->
+      <div class="filters-section">
+        <div class="filters-grid">
+          <div class="filter-group">
+            <label>Filter Posts by Date:</label>
+            <div class="filter-input-group">
+              <input
+                type="number"
+                id="dateFilterDays"
+                placeholder=""
+                min="1"
+                max="365"
+              >
+              <span>days ago</span>
+              <button id="clearDateFilter" class="reset-btn">Clear</button>
+            </div>
+            <div class="filter-help">
+              Leave empty to include all posts. Enter a number to only include posts from the last N days.
+            </div>
+          </div>
+          
+          <div class="filter-group">
+            <label>Stop Analysis After:</label>
+            <div class="filter-input-group">
+              <input
+                type="number"
+                id="postLimit"
+                placeholder=""
+                min="1"
+                max="10000"
+              >
+              <span>posts</span>
+              <button id="clearPostLimit" class="reset-btn">Clear</button>
+            </div>
+            <div class="filter-help">
+              Leave empty to analyze all posts. Enter a number to stop analysis after N posts have been analyzed.
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- New: Live Metrics Section -->
       <div
         id="metrics"
@@ -288,6 +390,7 @@
       <div class="section-divider"></div>
       <div class="controls" id="controls"></div>
       <div class="section-divider"></div>
+      
       <!-- AI Provider Configuration -->
       <div class="ai-config" style="margin: 15px 0">
         <label
@@ -367,80 +470,6 @@
               Test Connection
             </button>
           </div>
-        </div>
-      </div>
-
-      <!-- Date Filter Section -->
-      <div class="date-filter" style="margin: 15px 0">
-        <label
-          style="
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 500;
-            color: #333;
-          "
-          >Filter Posts by Date:</label
-        >
-        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
-          <input
-            type="number"
-            id="dateFilterDays"
-            placeholder=""
-            min="1"
-            max="365"
-            style="
-              width: 80px;
-              padding: 8px;
-              border: 1px solid #ddd;
-              border-radius: 4px;
-              font-size: 14px;
-              text-align: center;
-            "
-          >
-          <span style="color: #666; font-size: 14px;">days ago</span>
-          <button id="clearDateFilter" class="reset-btn" style="width: auto; margin: 0; padding: 8px 12px; font-size: 13px;">
-            Clear Filter
-          </button>
-        </div>
-        <div style="font-size: 12px; color: #666; margin-top: 5px;">
-          Leave empty to include all posts. Enter a number to only include posts from the last N days.
-        </div>
-      </div>
-
-      <!-- Post Limit Section -->
-      <div class="post-limit" style="margin: 15px 0">
-        <label
-          style="
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 500;
-            color: #333;
-          "
-          >Stop Analysis After:</label
-        >
-        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
-          <input
-            type="number"
-            id="postLimit"
-            placeholder=""
-            min="1"
-            max="10000"
-            style="
-              width: 80px;
-              padding: 8px;
-              border: 1px solid #ddd;
-              border-radius: 4px;
-              font-size: 14px;
-              text-align: center;
-            "
-          >
-          <span style="color: #666; font-size: 14px;">posts analyzed</span>
-          <button id="clearPostLimit" class="reset-btn" style="width: auto; margin: 0; padding: 8px 12px; font-size: 13px;">
-            Clear Limit
-          </button>
-        </div>
-        <div style="font-size: 12px; color: #666; margin-top: 5px;">
-          Leave empty to analyze all posts. Enter a number to stop analysis after N posts have been analyzed.
         </div>
       </div>
 
