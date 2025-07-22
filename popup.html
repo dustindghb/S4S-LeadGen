@@ -356,7 +356,7 @@
               <input
                 type="number"
                 id="autoRefreshPosts"
-                value="50"
+                value="15"
                 min="10"
                 max="200"
                 style="width: 60px; padding: 4px; font-size: 12px;"
@@ -366,39 +366,7 @@
             <div class="filter-help">
               Automatically refresh the page after analyzing the specified number of posts to get fresh content. This is more efficient as most hiring posts are in the first 50 posts.
             </div>
-            <div style="margin-top: 10px;">
-              <button
-                id="testRefreshBtn"
-                style="
-                  background: #6c757d;
-                  color: white;
-                  border: none;
-                  padding: 8px 16px;
-                  border-radius: 4px;
-                  cursor: pointer;
-                  font-size: 12px;
-                  margin-right: 8px;
-                "
-                title="Test the refresh functionality manually"
-              >
-                Test Refresh
-              </button>
-              <button
-                id="testAutoRefreshBtn"
-                style="
-                  background: #dc3545;
-                  color: white;
-                  border: none;
-                  padding: 8px 16px;
-                  border-radius: 4px;
-                  cursor: pointer;
-                  font-size: 12px;
-                "
-                title="Test auto-refresh logic (simulates reaching post threshold)"
-              >
-                Test Auto-Refresh Logic
-              </button>
-            </div>
+
           </div>
         </div>
       </div>
@@ -430,6 +398,12 @@
           <div>
             <span style="color: #6c757d">Posts Analyzed:</span>
             <span id="postsAnalyzed" style="font-weight: bold; color: #28a745"
+              >0</span
+            >
+          </div>
+          <div>
+            <span style="color: #6c757d">Total Posts Found (This Session):</span>
+            <span id="totalPostsFound" style="font-weight: bold; color: #17a2b8"
               >0</span
             >
           </div>

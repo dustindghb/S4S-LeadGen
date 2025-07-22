@@ -1057,6 +1057,7 @@ JSON:`;
   let autoRefreshEnabled = true; // New: enable auto-refresh after 50 posts
   let refreshCount = 0; // New: track number of refreshes performed
   let autoRefreshTriggered = false; // New: flag to track if auto-refresh has been triggered
+  let totalPostsFoundAllTime = 0; // New: track total posts found across all sessions
 
   // Helper to save and load leads from chrome.storage
   function saveLeadsToStorage(leads, statusDiv) {
@@ -1082,6 +1083,8 @@ JSON:`;
     });
   }
 
+
+
   // Global error handler to prevent UI from becoming unresponsive
   window.addEventListener('error', function(event) {
     console.error('[S4S] Global error caught:', event.error);
@@ -1105,6 +1108,11 @@ JSON:`;
     const downloadSection = document.getElementById('download-section');
     let statusDiv = document.getElementById('status');
     const resultsDiv = document.getElementById('results');
+
+    // Initialize total posts found count to 0 on each extension restart
+    totalPostsFoundAllTime = 0;
+    console.log('[S4S] Total posts found reset to 0 for new session');
+    updateMetrics(); // Update metrics to show the reset count
 
     // Fallback: create statusDiv if missing
     if (!statusDiv) {
@@ -1467,84 +1475,7 @@ JSON:`;
       });
     }
 
-    // Add test refresh button functionality
-    const testRefreshBtn = document.getElementById('testRefreshBtn');
-    if (testRefreshBtn) {
-      testRefreshBtn.addEventListener('click', async () => {
-        try {
-          console.log('[S4S] Manual refresh test requested');
-          const tab = await getMostRecentLinkedInTab();
-          if (tab) {
-            testRefreshBtn.textContent = 'Testing...';
-            testRefreshBtn.disabled = true;
-            
-            await refreshAndRestartAnalysis(tab.id, statusDiv, resultsDiv);
-            
-            testRefreshBtn.textContent = 'Test Refresh';
-            testRefreshBtn.disabled = false;
-          } else {
-            console.error('[S4S] No LinkedIn tab found for refresh test');
-            statusDiv.textContent = 'Error: No LinkedIn tab found. Please open a LinkedIn page.';
-          }
-        } catch (error) {
-          console.error('[S4S] Error during manual refresh test:', error);
-          testRefreshBtn.textContent = 'Test Refresh';
-          testRefreshBtn.disabled = false;
-          statusDiv.textContent = 'Error during refresh test. Please try again.';
-        }
-      });
-    }
 
-    // Add test auto-refresh logic button functionality
-    const testAutoRefreshBtn = document.getElementById('testAutoRefreshBtn');
-    if (testAutoRefreshBtn) {
-      testAutoRefreshBtn.addEventListener('click', async () => {
-        try {
-          console.log('[S4S] Testing auto-refresh logic...');
-          const tab = await getMostRecentLinkedInTab();
-          if (tab) {
-            testAutoRefreshBtn.textContent = 'Testing...';
-            testAutoRefreshBtn.disabled = true;
-            
-            // Simulate reaching the auto-refresh threshold
-            const autoRefreshPostsCount = parseInt(document.getElementById('autoRefreshPosts')?.value) || 50;
-            console.log(`[S4S] Simulating auto-refresh trigger at ${autoRefreshPostsCount} posts`);
-            
-            // Manually trigger the auto-refresh logic
-            autoRefreshTriggered = true;
-            refreshCount++;
-            console.log(`[S4S] Auto-refresh triggered manually: ${allAnalyzedPosts.length} posts analyzed (refresh #${refreshCount})`);
-            statusDiv.textContent = `Auto-refresh triggered manually! Analyzed ${allAnalyzedPosts.length} posts. Refreshing page to get fresh content...`;
-            
-            // Stop scrolling first
-            try {
-              await sendMessage(tab.id, { action: "stopScroll" }, 5000);
-            } catch (error) {
-              console.error('[S4S] Error stopping scroll:', error);
-            }
-            
-            // Stop the streaming analysis temporarily
-            stopStreamingAnalysis();
-            
-            // Refresh the page and restart analysis
-            await refreshAndRestartAnalysis(tab.id, statusDiv, resultsDiv);
-            
-            testAutoRefreshBtn.textContent = 'Test Auto-Refresh Logic';
-            testAutoRefreshBtn.disabled = false;
-          } else {
-            console.error('[S4S] No LinkedIn tab found for auto-refresh test');
-            statusDiv.textContent = 'Error: No LinkedIn tab found. Please open a LinkedIn page.';
-            testAutoRefreshBtn.textContent = 'Test Auto-Refresh Logic';
-            testAutoRefreshBtn.disabled = false;
-          }
-        } catch (error) {
-          console.error('[S4S] Error during auto-refresh test:', error);
-          testAutoRefreshBtn.textContent = 'Test Auto-Refresh Logic';
-          testAutoRefreshBtn.disabled = false;
-          statusDiv.textContent = 'Error during auto-refresh test. Please try again.';
-        }
-      });
-    }
     }
 
     // Restore Start/Stop Scrolling button functionality
@@ -1774,7 +1705,7 @@ JSON:`;
       
       // Check if auto-refresh should be triggered (after configurable number of posts)
       // IMPORTANT: Check auto-refresh BEFORE post limit to ensure it triggers
-      const autoRefreshPostsCount = parseInt(document.getElementById('autoRefreshPosts')?.value) || 50;
+      const autoRefreshPostsCount = parseInt(document.getElementById('autoRefreshPosts')?.value) || 15;
       const autoRefreshCheckbox = document.getElementById('autoRefreshEnabled');
       const isAutoRefreshEnabled = autoRefreshCheckbox ? autoRefreshCheckbox.checked : autoRefreshEnabled;
       
@@ -1959,6 +1890,14 @@ JSON:`;
         const previousCount = totalPostCount;
         totalPostCount = newPosts.length;
         
+        // Update total posts found for current session
+        // Only increment if we found more posts than before
+        if (newPosts.length > previousCount) {
+          const newPostsFound = newPosts.length - previousCount;
+          totalPostsFoundAllTime += newPostsFound;
+          console.log(`[S4S] Total posts found updated: +${newPostsFound} new posts, total this session: ${totalPostsFoundAllTime}`);
+        }
+        
         // Update metrics when total post count changes
         updateMetrics();
         
@@ -2070,13 +2009,15 @@ JSON:`;
     const metricsDiv = document.getElementById('metrics');
     const postsFoundSpan = document.getElementById('postsFound');
     const postsAnalyzedSpan = document.getElementById('postsAnalyzed');
+    const totalPostsFoundSpan = document.getElementById('totalPostsFound');
     const leadsFoundSpan = document.getElementById('leadsFound');
     const analysisStatusSpan = document.getElementById('analysisStatus');
     
-    if (metricsDiv && postsFoundSpan && postsAnalyzedSpan && leadsFoundSpan && analysisStatusSpan) {
+    if (metricsDiv && postsFoundSpan && postsAnalyzedSpan && totalPostsFoundSpan && leadsFoundSpan && analysisStatusSpan) {
       // Show posts found vs analyzed with more context
       postsFoundSpan.textContent = `${totalPostCount} (${postQueue.length} queued)`;
       postsAnalyzedSpan.textContent = allAnalyzedPosts.length;
+      totalPostsFoundSpan.textContent = totalPostsFoundAllTime;
       
       // Check if date filter is active
       const dateFilterDays = parseInt(document.getElementById('dateFilterDays')?.value) || 0;
@@ -2102,7 +2043,7 @@ JSON:`;
           
           // Add auto-refresh indicator
           if (autoRefreshEnabled && !autoRefreshTriggered && allAnalyzedPosts.length > 0) {
-            const autoRefreshPostsCount = parseInt(document.getElementById('autoRefreshPosts')?.value) || 50;
+            const autoRefreshPostsCount = parseInt(document.getElementById('autoRefreshPosts')?.value) || 15;
             const postsUntilRefresh = autoRefreshPostsCount - allAnalyzedPosts.length;
             if (postsUntilRefresh > 0) {
               statusText += ` (${postsUntilRefresh} until refresh)`;
@@ -2861,7 +2802,23 @@ Niti`;
       escapeCSVField(lead.post_date || lead.postDate || ''),
       escapeCSVField(lead.post_content || lead.content || '')
     ]);
-    const csvContent = [header, ...rows].map(e => e.join(',')).join('\n');
+    
+    // Add summary row with total posts found metric
+    const summaryRow = [
+      '', // Post Order
+      'SUMMARY', // Name
+      '', // Title
+      '', // Company
+      '', // Position
+      '', // Connection Degree
+      '', // Connection Note
+      '', // Post URL
+      '', // Profile URL
+      '', // Post Date
+      `Found ${filteredLeads.length} leads among ${totalPostsFoundAllTime} total posts discovered in this session` // Post Content
+    ];
+    
+    const csvContent = [header, ...rows, summaryRow].map(e => e.join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2949,7 +2906,26 @@ Niti`;
       escapeCSVField(post.analyzedAt || '')
     ]);
     
-    const csvContent = [header, ...rows].map(e => e.join(',')).join('\n');
+    // Add summary row with total posts found metric
+    const summaryRow = [
+      '', // Post Order
+      'SUMMARY', // Name
+      '', // Headline
+      '', // Is Hiring
+      '', // Title
+      '', // Company
+      '', // Position
+      '', // Connection Degree
+      '', // Connection Note
+      '', // Post URL
+      '', // Profile URL
+      '', // Post Date
+      `Analyzed ${filteredPosts.length} posts among ${totalPostsFoundAllTime} total posts discovered in this session`, // Post Content
+      '', // Analysis Error
+      '' // Analyzed At
+    ];
+    
+    const csvContent = [header, ...rows, summaryRow].map(e => e.join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
