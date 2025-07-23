@@ -1133,6 +1133,148 @@ JSON:`;
     // Button state
     let foundLeads = [];
 
+    // Initialize Settings Page
+    const settingsBtn = document.getElementById('settingsBtn');
+    const settingsPage = document.getElementById('settingsPage');
+    const settingsBack = document.getElementById('settingsBack');
+    
+    // Settings page functionality
+    if (settingsBtn && settingsPage && settingsBack) {
+      settingsBtn.addEventListener('click', () => {
+        settingsPage.classList.add('show');
+        loadSettingsToModal();
+      });
+      
+      settingsBack.addEventListener('click', () => {
+        settingsPage.classList.remove('show');
+      });
+    }
+    
+    // Function to load current settings into modal
+    function loadSettingsToModal() {
+      // Load filter settings
+      const dateFilterInput = document.getElementById('dateFilterDays');
+      const modalDateFilterInput = document.getElementById('modalDateFilterDays');
+      if (dateFilterInput && modalDateFilterInput) {
+        modalDateFilterInput.value = dateFilterInput.value;
+      }
+      
+      const postLimitInput = document.getElementById('postLimit');
+      const modalPostLimitInput = document.getElementById('modalPostLimit');
+      if (postLimitInput && modalPostLimitInput) {
+        modalPostLimitInput.value = postLimitInput.value;
+      }
+      
+      const autoRefreshCheckbox = document.getElementById('autoRefreshEnabled');
+      const modalAutoRefreshCheckbox = document.getElementById('modalAutoRefreshEnabled');
+      if (autoRefreshCheckbox && modalAutoRefreshCheckbox) {
+        modalAutoRefreshCheckbox.checked = autoRefreshCheckbox.checked;
+      }
+      
+      const autoRefreshPostsInput = document.getElementById('autoRefreshPosts');
+      const modalAutoRefreshPostsInput = document.getElementById('modalAutoRefreshPosts');
+      if (autoRefreshPostsInput && modalAutoRefreshPostsInput) {
+        modalAutoRefreshPostsInput.value = autoRefreshPostsInput.value;
+      }
+      
+      // Load AI provider settings
+      const ollamaProviderRadio = document.getElementById('ollamaProvider');
+      const modalOllamaProviderRadio = document.getElementById('modalOllamaProvider');
+      const openaiProviderRadio = document.getElementById('openaiProvider');
+      const modalOpenaiProviderRadio = document.getElementById('modalOpenaiProvider');
+      
+      if (ollamaProviderRadio && modalOllamaProviderRadio && openaiProviderRadio && modalOpenaiProviderRadio) {
+        if (ollamaProviderRadio.checked) {
+          modalOllamaProviderRadio.checked = true;
+        } else {
+          modalOpenaiProviderRadio.checked = true;
+        }
+      }
+      
+      // Load OpenAI config
+      const openaiApiKeyInput = document.getElementById('openaiApiKey');
+      const modalOpenaiApiKeyInput = document.getElementById('modalOpenaiApiKey');
+      const openaiModelSelect = document.getElementById('openaiModel');
+      const modalOpenaiModelSelect = document.getElementById('modalOpenaiModel');
+      
+      if (openaiApiKeyInput && modalOpenaiApiKeyInput) {
+        modalOpenaiApiKeyInput.value = openaiApiKeyInput.value;
+      }
+      if (openaiModelSelect && modalOpenaiModelSelect) {
+        modalOpenaiModelSelect.value = openaiModelSelect.value;
+      }
+      
+      // Show/hide OpenAI config based on provider
+      const modalOpenaiConfig = document.getElementById('modalOpenaiConfig');
+      if (modalOpenaiConfig) {
+        modalOpenaiConfig.style.display = modalOpenaiProviderRadio.checked ? 'block' : 'none';
+      }
+      
+
+    }
+    
+    // Function to sync modal settings back to main form
+    function syncSettingsFromModal() {
+      // Sync filter settings
+      const dateFilterInput = document.getElementById('dateFilterDays');
+      const modalDateFilterInput = document.getElementById('modalDateFilterDays');
+      if (dateFilterInput && modalDateFilterInput) {
+        dateFilterInput.value = modalDateFilterInput.value;
+        updateDateFilterUI();
+      }
+      
+      const postLimitInput = document.getElementById('postLimit');
+      const modalPostLimitInput = document.getElementById('modalPostLimit');
+      if (postLimitInput && modalPostLimitInput) {
+        postLimitInput.value = modalPostLimitInput.value;
+        updatePostLimitUI();
+      }
+      
+      const autoRefreshCheckbox = document.getElementById('autoRefreshEnabled');
+      const modalAutoRefreshCheckbox = document.getElementById('modalAutoRefreshEnabled');
+      if (autoRefreshCheckbox && modalAutoRefreshCheckbox) {
+        autoRefreshCheckbox.checked = modalAutoRefreshCheckbox.checked;
+        autoRefreshEnabled = modalAutoRefreshCheckbox.checked;
+      }
+      
+      const autoRefreshPostsInput = document.getElementById('autoRefreshPosts');
+      const modalAutoRefreshPostsInput = document.getElementById('modalAutoRefreshPosts');
+      if (autoRefreshPostsInput && modalAutoRefreshPostsInput) {
+        autoRefreshPostsInput.value = modalAutoRefreshPostsInput.value;
+      }
+      
+      // Sync AI provider settings
+      const ollamaProviderRadio = document.getElementById('ollamaProvider');
+      const modalOllamaProviderRadio = document.getElementById('modalOllamaProvider');
+      const openaiProviderRadio = document.getElementById('openaiProvider');
+      const modalOpenaiProviderRadio = document.getElementById('modalOpenaiProvider');
+      
+      if (ollamaProviderRadio && modalOllamaProviderRadio && openaiProviderRadio && modalOpenaiProviderRadio) {
+        if (modalOllamaProviderRadio.checked) {
+          ollamaProviderRadio.checked = true;
+          openaiProviderRadio.checked = false;
+        } else {
+          openaiProviderRadio.checked = true;
+          ollamaProviderRadio.checked = false;
+        }
+      }
+      
+      // Sync OpenAI config
+      const openaiApiKeyInput = document.getElementById('openaiApiKey');
+      const modalOpenaiApiKeyInput = document.getElementById('modalOpenaiApiKey');
+      const openaiModelSelect = document.getElementById('openaiModel');
+      const modalOpenaiModelSelect = document.getElementById('modalOpenaiModel');
+      
+      if (openaiApiKeyInput && modalOpenaiApiKeyInput) {
+        openaiApiKeyInput.value = modalOpenaiApiKeyInput.value;
+      }
+      if (openaiModelSelect && modalOpenaiModelSelect) {
+        openaiModelSelect.value = modalOpenaiModelSelect.value;
+      }
+      
+
+    }
+
     // Initialize AI provider configuration
     const ollamaProviderRadio = document.getElementById('ollamaProvider');
     const openaiProviderRadio = document.getElementById('openaiProvider');
@@ -1299,6 +1441,175 @@ JSON:`;
           statusDiv.textContent = 'Error: ' + error.message;
           testOpenAIBtn.textContent = 'Test Connection';
           testOpenAIBtn.disabled = false;
+        }
+      });
+    }
+
+    // Initialize modal event listeners
+    const modalOllamaProviderRadio = document.getElementById('modalOllamaProvider');
+    const modalOpenaiProviderRadio = document.getElementById('modalOpenaiProvider');
+    const modalOpenaiConfig = document.getElementById('modalOpenaiConfig');
+    const modalSaveOpenAIConfigBtn = document.getElementById('modalSaveOpenAIConfig');
+    const modalTestOpenAIBtn = document.getElementById('modalTestOpenAI');
+    const modalClearDateFilterBtn = document.getElementById('modalClearDateFilter');
+    const modalClearPostLimitBtn = document.getElementById('modalClearPostLimit');
+    
+    // Modal AI provider radio button event listeners
+    if (modalOllamaProviderRadio && modalOpenaiProviderRadio && modalOpenaiConfig) {
+      modalOllamaProviderRadio.addEventListener('change', () => {
+        if (modalOllamaProviderRadio.checked) {
+          modalOpenaiConfig.style.display = 'none';
+        }
+      });
+
+      modalOpenaiProviderRadio.addEventListener('change', () => {
+        if (modalOpenaiProviderRadio.checked) {
+          modalOpenaiConfig.style.display = 'block';
+        }
+      });
+    }
+    
+    // Modal OpenAI config save button
+    if (modalSaveOpenAIConfigBtn) {
+      modalSaveOpenAIConfigBtn.addEventListener('click', async () => {
+        try {
+          const modalOpenaiApiKeyInput = document.getElementById('modalOpenaiApiKey');
+          const modalOpenaiModelSelect = document.getElementById('modalOpenaiModel');
+          
+          if (!modalOpenaiApiKeyInput || !modalOpenaiModelSelect) {
+            console.error('[S4S] Modal OpenAI config elements not found');
+            return;
+          }
+
+          const apiKey = modalOpenaiApiKeyInput.value.trim();
+          const model = modalOpenaiModelSelect.value;
+
+          if (!apiKey) {
+            alert('OpenAI API key is required');
+            return;
+          }
+
+          if (!apiKey.startsWith('sk-')) {
+            alert('Invalid OpenAI API key format (should start with sk-)');
+            return;
+          }
+
+          modalSaveOpenAIConfigBtn.disabled = true;
+          modalSaveOpenAIConfigBtn.textContent = 'Saving...';
+
+          const config = { apiKey, model };
+          const success = await saveOpenAIConfigToStorage(config);
+          
+          if (success) {
+            // Sync to main form
+            const openaiApiKeyInput = document.getElementById('openaiApiKey');
+            const openaiModelSelect = document.getElementById('openaiModel');
+            if (openaiApiKeyInput) openaiApiKeyInput.value = apiKey;
+            if (openaiModelSelect) openaiModelSelect.value = model;
+            
+            modalSaveOpenAIConfigBtn.textContent = 'Saved!';
+            setTimeout(() => {
+              modalSaveOpenAIConfigBtn.textContent = 'Save OpenAI Config';
+              modalSaveOpenAIConfigBtn.disabled = false;
+            }, 2000);
+          } else {
+            modalSaveOpenAIConfigBtn.textContent = 'Save OpenAI Config';
+            modalSaveOpenAIConfigBtn.disabled = false;
+            alert('Failed to save OpenAI configuration');
+          }
+        } catch (error) {
+          console.error('[S4S] Error saving modal OpenAI configuration:', error);
+          modalSaveOpenAIConfigBtn.textContent = 'Save OpenAI Config';
+          modalSaveOpenAIConfigBtn.disabled = false;
+          alert('Error: ' + error.message);
+        }
+      });
+    }
+    
+    // Modal OpenAI test button
+    if (modalTestOpenAIBtn) {
+      modalTestOpenAIBtn.addEventListener('click', async () => {
+        try {
+          const modalOpenaiApiKeyInput = document.getElementById('modalOpenaiApiKey');
+          const modalOpenaiModelSelect = document.getElementById('modalOpenaiModel');
+          
+          if (!modalOpenaiApiKeyInput || !modalOpenaiModelSelect) {
+            console.error('[S4S] Modal OpenAI config elements not found');
+            return;
+          }
+
+          const apiKey = modalOpenaiApiKeyInput.value.trim();
+          const model = modalOpenaiModelSelect.value;
+
+          if (!apiKey) {
+            alert('OpenAI API key is required');
+            return;
+          }
+
+          if (!apiKey.startsWith('sk-')) {
+            alert('Invalid OpenAI API key format (should start with sk-)');
+            return;
+          }
+
+          modalTestOpenAIBtn.disabled = true;
+          modalTestOpenAIBtn.textContent = 'Testing...';
+          
+          // Test with a simple prompt
+          const testResponse = await sendMessageToOpenAI('Respond with "OK" if you can see this message.', model);
+          
+          if (testResponse && testResponse.success) {
+            modalTestOpenAIBtn.textContent = 'Test Passed!';
+            setTimeout(() => {
+              modalTestOpenAIBtn.textContent = 'Test Connection';
+              modalTestOpenAIBtn.disabled = false;
+            }, 2000);
+          } else {
+            modalTestOpenAIBtn.textContent = 'Test Failed';
+            setTimeout(() => {
+              modalTestOpenAIBtn.textContent = 'Test Connection';
+              modalTestOpenAIBtn.disabled = false;
+            }, 2000);
+            alert('OpenAI connection test failed');
+          }
+        } catch (error) {
+          console.error('[S4S] Error testing modal OpenAI connection:', error);
+          modalTestOpenAIBtn.textContent = 'Test Connection';
+          modalTestOpenAIBtn.disabled = false;
+          alert('Error: ' + error.message);
+        }
+      });
+    }
+    
+
+    
+    // Modal clear date filter button
+    if (modalClearDateFilterBtn) {
+      modalClearDateFilterBtn.addEventListener('click', () => {
+        const modalDateFilterInput = document.getElementById('modalDateFilterDays');
+        if (modalDateFilterInput) {
+          modalDateFilterInput.value = '';
+          // Sync to main form
+          const dateFilterInput = document.getElementById('dateFilterDays');
+          if (dateFilterInput) {
+            dateFilterInput.value = '';
+            updateDateFilterUI();
+          }
+        }
+      });
+    }
+    
+    // Modal clear post limit button
+    if (modalClearPostLimitBtn) {
+      modalClearPostLimitBtn.addEventListener('click', () => {
+        const modalPostLimitInput = document.getElementById('modalPostLimit');
+        if (modalPostLimitInput) {
+          modalPostLimitInput.value = '';
+          // Sync to main form
+          const postLimitInput = document.getElementById('postLimit');
+          if (postLimitInput) {
+            postLimitInput.value = '';
+            updatePostLimitUI();
+          }
         }
       });
     }
@@ -1478,11 +1789,34 @@ JSON:`;
 
     }
 
+    // Initialize collapsible filters functionality
+    const filtersToggle = document.getElementById('filtersToggle');
+    const filtersContent = document.getElementById('filtersContent');
+    
+    if (filtersToggle && filtersContent) {
+      filtersToggle.addEventListener('click', () => {
+        const isExpanded = filtersToggle.classList.contains('expanded');
+        
+        if (isExpanded) {
+          // Collapse
+          filtersToggle.classList.remove('expanded');
+          filtersContent.classList.remove('expanded');
+        } else {
+          // Expand
+          filtersToggle.classList.add('expanded');
+          filtersContent.classList.add('expanded');
+        }
+      });
+      
+      // Start collapsed by default
+      filtersToggle.classList.remove('expanded');
+      filtersContent.classList.remove('expanded');
+    }
+
     // Restore Start/Stop Scrolling button functionality
     const startBtn = document.getElementById('startScroll');
-    const stopBtn = document.getElementById('stopScroll');
-    const stopAnalysisBtn = document.getElementById('stopAnalysis');
-    if (!startBtn || !stopBtn || !stopAnalysisBtn) {
+    const stopAllBtn = document.getElementById('stopAll');
+    if (!startBtn || !stopAllBtn) {
       statusDiv.textContent = 'Error: Start/Stop buttons not found in popup. Please check popup.html.';
       return;
     }
@@ -1498,8 +1832,7 @@ JSON:`;
         }
         const tabId = tab.id;
         startBtn.disabled = true;
-        stopBtn.disabled = false;
-        stopAnalysisBtn.disabled = false;
+        stopAllBtn.disabled = false;
         statusDiv.textContent = 'Preparing to scroll with streaming analysis...';
 
         // Ensure content script is injected
@@ -1507,7 +1840,7 @@ JSON:`;
         if (!injected) {
           statusDiv.textContent = 'Error: Could not inject content script. Please refresh the LinkedIn page.';
           startBtn.disabled = false;
-          stopBtn.disabled = true;
+          stopAllBtn.disabled = true;
           return;
         }
 
@@ -1516,7 +1849,7 @@ JSON:`;
         if (!isResponsive) {
           statusDiv.textContent = 'Error: Content script not responsive. Please refresh the LinkedIn page.';
           startBtn.disabled = false;
-          stopBtn.disabled = true;
+          stopAllBtn.disabled = true;
           return;
         }
 
@@ -1528,7 +1861,7 @@ JSON:`;
             alert('OpenAI API key is required to start analysis. Please configure your OpenAI API key in the settings.');
             statusDiv.textContent = 'Error: OpenAI API key not configured. Please enter your API key.';
             startBtn.disabled = false;
-            stopBtn.disabled = true;
+            stopAllBtn.disabled = true;
             return;
           }
         }
@@ -1547,22 +1880,20 @@ JSON:`;
         
         // Analysis continues until user clicks stop
         startBtn.disabled = false;
-        stopBtn.disabled = true;
-        // Keep stopAnalysisBtn enabled so user can stop analysis
+        stopAllBtn.disabled = true;
       } catch (error) {
         statusDiv.textContent = 'Error: ' + error.message;
         startBtn.disabled = false;
-        stopBtn.disabled = true;
-        stopAnalysisBtn.disabled = true;
+        stopAllBtn.disabled = true;
       }
     });
 
-    stopBtn.addEventListener('click', async () => {
+    stopAllBtn.addEventListener('click', async () => {
       try {
-        console.log('[S4S] Stop scrolling button clicked');
+        console.log('[S4S] Stop all button clicked');
         startBtn.disabled = false;
-        stopBtn.disabled = true;
-        statusDiv.textContent = 'Stopping scrolling...';
+        stopAllBtn.disabled = true;
+        statusDiv.textContent = 'Stopping scrolling and analysis...';
 
         const tab = await getMostRecentLinkedInTab();
         if (!tab) {
@@ -1572,36 +1903,24 @@ JSON:`;
         }
         const tabId = tab.id;
         
-        // Stop scrolling but keep analysis running
-        await sendMessage(tabId, { action: "stopScroll" }, 5000);
-        
-        // Mark scrolling as stopped but keep analysis running
-        isScrollingActive = false;
-        
-        statusDiv.textContent = 'Scrolling stopped. Analysis continues with remaining posts...';
-        updateMetrics();
-        ensureButtonStates(); // Ensure buttons are in correct state
-      } catch (error) {
-        console.error('[S4S] Error in stop scrolling:', error);
-        statusDiv.textContent = 'Error: ' + error.message;
-        ensureButtonStates(); // Ensure buttons are in correct state even on error
-      }
-    });
-
-    stopAnalysisBtn.addEventListener('click', async () => {
-      try {
-        console.log('[S4S] Stop analysis button clicked');
-        stopAnalysisBtn.disabled = true;
-        statusDiv.textContent = 'Stopping analysis...';
+        // Stop scrolling
+        try {
+          await sendMessage(tabId, { action: "stopScroll" }, 5000);
+        } catch (error) {
+          console.error('[S4S] Error stopping scroll:', error);
+        }
         
         // Stop the streaming analysis completely
         stopStreamingAnalysis();
         
-        statusDiv.textContent = 'Analysis stopped. Scrolling continues...';
+        // Mark scrolling as stopped
+        isScrollingActive = false;
+        
+        statusDiv.textContent = 'Scrolling and analysis stopped.';
         updateMetrics();
         ensureButtonStates(); // Ensure buttons are in correct state
       } catch (error) {
-        console.error('[S4S] Error in stop analysis:', error);
+        console.error('[S4S] Error in stop all:', error);
         statusDiv.textContent = 'Error: ' + error.message;
         ensureButtonStates(); // Ensure buttons are in correct state even on error
       }
@@ -2218,10 +2537,9 @@ JSON:`;
   // New: Function to ensure button states are correct
   function ensureButtonStates() {
     const startBtn = document.getElementById('startScroll');
-    const stopBtn = document.getElementById('stopScroll');
-    const stopAnalysisBtn = document.getElementById('stopAnalysis');
+    const stopAllBtn = document.getElementById('stopAll');
     
-    if (!startBtn || !stopBtn || !stopAnalysisBtn) {
+    if (!startBtn || !stopAllBtn) {
       console.error('[S4S] Button elements not found during state check');
       return;
     }
@@ -2230,13 +2548,11 @@ JSON:`;
     if (isStreamingAnalysis) {
       // Analysis is running
       startBtn.disabled = true;
-      stopBtn.disabled = false;
-      stopAnalysisBtn.disabled = false;
+      stopAllBtn.disabled = false;
     } else {
       // Analysis is stopped
       startBtn.disabled = false;
-      stopBtn.disabled = true;
-      stopAnalysisBtn.disabled = true;
+      stopAllBtn.disabled = true;
     }
     
     // Force re-enable if buttons seem stuck
@@ -2244,13 +2560,9 @@ JSON:`;
       console.log('[S4S] Re-enabling start button');
       startBtn.disabled = false;
     }
-    if (stopBtn.disabled && isStreamingAnalysis) {
-      console.log('[S4S] Re-enabling stop button');
-      stopBtn.disabled = false;
-    }
-    if (stopAnalysisBtn.disabled && isStreamingAnalysis) {
-      console.log('[S4S] Re-enabling stop analysis button');
-      stopAnalysisBtn.disabled = false;
+    if (stopAllBtn.disabled && isStreamingAnalysis) {
+      console.log('[S4S] Re-enabling stop all button');
+      stopAllBtn.disabled = false;
     }
   }
 
