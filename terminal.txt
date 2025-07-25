@@ -1,2 +1,5 @@
+
+If using ollama, run this command in terminal to allow permissions for the chrome extension.
+
 export OLLAMA_ORIGINS=chrome-extension://acfgodflnfcmiinhaemaoagakhhmcham
 ollama serve

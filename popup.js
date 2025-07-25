@@ -2673,6 +2673,31 @@ JSON:`;
     // Clean up connection degree
     const cleanConnectionDegree = connectionDegree ? connectionDegree.toLowerCase().replace(/\s+/g, '') : '3rd';
     
+    // If it's a 1st connection, use re-introduction message
+    if (cleanConnectionDegree.includes('1st') || cleanConnectionDegree.includes('first')) {
+      const greeting = isCompanyAccount ? 'Hey there' : `Hi ${firstName}`;
+      
+      return `${greeting},
+
+I noticed on LinkedIn that you are hiring for your team.
+
+I wanted to take a moment to re-introduce myself and my company, Stage 4 Solutions, an interim staffing company ranked on the Inc. 5000 list five times for consistent growth.
+
+For the last 23 years, we have filled gaps across marketing, IT and operations teams - nationwide. We are in the top 9% of staffing firms nationally!
+
+I noticed on LinkedIn that you are hiring for your team. We have quickly filled gaps at our clients such as NetApp, AWS, Salesforce, ServiceNow, and HPE. Here's what our clients say about us: https://www.stage4solutions.com/clientsuccess/testimonials/
+
+We specialize in providing timely, cost-effective, and well-qualified professionals for contract (full or part-time) and contract to perm roles.
+
+I would love to support you in filling any gaps in your team with well-qualified contractors.
+
+What is a good time to talk over the next couple of weeks? Please let me know and I will send you a meeting invite.
+
+Looking forward to our conversation,
+
+Niti`;
+    }
+    
     if (cleanConnectionDegree.includes('2nd') || cleanConnectionDegree.includes('second')) {
       return `Hi ${firstName},
 
