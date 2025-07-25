@@ -21,7 +21,7 @@ window.exportLeadsToCSV = function(leads) {
   }
   
   // Create CSV content
-  const headers = ['Post Order', 'Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Connection Note', 'Post URL', 'LinkedIn Profile URL', 'Post Date', 'Post Content'];
+  const headers = ['Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Connection Note', 'Post URL', 'LinkedIn Profile URL', 'Post Date', 'Post Content'];
   const csvRows = [];
   
   // Add headers
@@ -58,7 +58,6 @@ Niti`;
     }
     
     const row = [
-      lead.postOrder || lead.postOrderText || '',
       lead.name || '',
       lead.title || 'Unknown Title',
       lead.company || 'Unknown Company',

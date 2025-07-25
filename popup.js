@@ -1,5 +1,3 @@
-
-
 // Helper to get the most recently active LinkedIn tab
 async function getMostRecentLinkedInTab() {
   return new Promise((resolve) => {
@@ -1140,41 +1138,52 @@ JSON:`;
     
     // Settings page functionality
     if (settingsBtn && settingsPage && settingsBack) {
-      settingsBtn.addEventListener('click', () => {
+      settingsBtn.addEventListener('click', async () => {
         settingsPage.classList.add('show');
-        loadSettingsToModal();
+        await loadSettingsToModal();
       });
       
-      settingsBack.addEventListener('click', () => {
+      settingsBack.addEventListener('click', async () => {
+        await syncSettingsFromModal();
         settingsPage.classList.remove('show');
       });
     }
     
+    // Initialize filter settings from storage on page load
+    (async () => {
+      try {
+        const filterSettings = await loadFilterSettingsFromStorage();
+        applyFilterSettingsToDOM(filterSettings);
+        console.log('[S4S] Filter settings initialized from storage');
+      } catch (error) {
+        console.error('[S4S] Error initializing filter settings:', error);
+      }
+    })();
+    
     // Function to load current settings into modal
-    function loadSettingsToModal() {
-      // Load filter settings
-      const dateFilterInput = document.getElementById('dateFilterDays');
+    async function loadSettingsToModal() {
+      // Load filter settings from storage
+      const filterSettings = await loadFilterSettingsFromStorage();
+      
       const modalDateFilterInput = document.getElementById('modalDateFilterDays');
-      if (dateFilterInput && modalDateFilterInput) {
-        modalDateFilterInput.value = dateFilterInput.value;
-      }
-      
-      const postLimitInput = document.getElementById('postLimit');
       const modalPostLimitInput = document.getElementById('modalPostLimit');
-      if (postLimitInput && modalPostLimitInput) {
-        modalPostLimitInput.value = postLimitInput.value;
-      }
-      
-      const autoRefreshCheckbox = document.getElementById('autoRefreshEnabled');
       const modalAutoRefreshCheckbox = document.getElementById('modalAutoRefreshEnabled');
-      if (autoRefreshCheckbox && modalAutoRefreshCheckbox) {
-        modalAutoRefreshCheckbox.checked = autoRefreshCheckbox.checked;
+      const modalAutoRefreshPostsInput = document.getElementById('modalAutoRefreshPosts');
+      
+      if (modalDateFilterInput) {
+        modalDateFilterInput.value = filterSettings.dateFilterDays || '';
       }
       
-      const autoRefreshPostsInput = document.getElementById('autoRefreshPosts');
-      const modalAutoRefreshPostsInput = document.getElementById('modalAutoRefreshPosts');
-      if (autoRefreshPostsInput && modalAutoRefreshPostsInput) {
-        modalAutoRefreshPostsInput.value = autoRefreshPostsInput.value;
+      if (modalPostLimitInput) {
+        modalPostLimitInput.value = filterSettings.postLimit || '';
+      }
+      
+      if (modalAutoRefreshCheckbox) {
+        modalAutoRefreshCheckbox.checked = filterSettings.autoRefreshEnabled !== false;
+      }
+      
+      if (modalAutoRefreshPostsInput) {
+        modalAutoRefreshPostsInput.value = filterSettings.autoRefreshPosts || 15;
       }
       
       // Load AI provider settings
@@ -1213,35 +1222,27 @@ JSON:`;
 
     }
     
-    // Function to sync modal settings back to main form
-    function syncSettingsFromModal() {
-      // Sync filter settings
-      const dateFilterInput = document.getElementById('dateFilterDays');
+    // Function to sync modal settings back to main form and save to storage
+    async function syncSettingsFromModal() {
+      // Get modal values
       const modalDateFilterInput = document.getElementById('modalDateFilterDays');
-      if (dateFilterInput && modalDateFilterInput) {
-        dateFilterInput.value = modalDateFilterInput.value;
-        updateDateFilterUI();
-      }
-      
-      const postLimitInput = document.getElementById('postLimit');
       const modalPostLimitInput = document.getElementById('modalPostLimit');
-      if (postLimitInput && modalPostLimitInput) {
-        postLimitInput.value = modalPostLimitInput.value;
-        updatePostLimitUI();
-      }
-      
-      const autoRefreshCheckbox = document.getElementById('autoRefreshEnabled');
       const modalAutoRefreshCheckbox = document.getElementById('modalAutoRefreshEnabled');
-      if (autoRefreshCheckbox && modalAutoRefreshCheckbox) {
-        autoRefreshCheckbox.checked = modalAutoRefreshCheckbox.checked;
-        autoRefreshEnabled = modalAutoRefreshCheckbox.checked;
-      }
-      
-      const autoRefreshPostsInput = document.getElementById('autoRefreshPosts');
       const modalAutoRefreshPostsInput = document.getElementById('modalAutoRefreshPosts');
-      if (autoRefreshPostsInput && modalAutoRefreshPostsInput) {
-        autoRefreshPostsInput.value = modalAutoRefreshPostsInput.value;
-      }
+      
+      // Create settings object
+      const filterSettings = {
+        dateFilterDays: modalDateFilterInput ? modalDateFilterInput.value : '',
+        postLimit: modalPostLimitInput ? modalPostLimitInput.value : '',
+        autoRefreshEnabled: modalAutoRefreshCheckbox ? modalAutoRefreshCheckbox.checked : true,
+        autoRefreshPosts: modalAutoRefreshPostsInput ? parseInt(modalAutoRefreshPostsInput.value) || 15 : 15
+      };
+      
+      // Save to storage
+      await saveFilterSettingsToStorage(filterSettings);
+      
+      // Apply to main form
+      applyFilterSettingsToDOM(filterSettings);
       
       // Sync AI provider settings
       const ollamaProviderRadio = document.getElementById('ollamaProvider');
@@ -1584,33 +1585,73 @@ JSON:`;
     
     // Modal clear date filter button
     if (modalClearDateFilterBtn) {
-      modalClearDateFilterBtn.addEventListener('click', () => {
+      modalClearDateFilterBtn.addEventListener('click', async () => {
         const modalDateFilterInput = document.getElementById('modalDateFilterDays');
         if (modalDateFilterInput) {
           modalDateFilterInput.value = '';
-          // Sync to main form
-          const dateFilterInput = document.getElementById('dateFilterDays');
-          if (dateFilterInput) {
-            dateFilterInput.value = '';
-            updateDateFilterUI();
-          }
+          // Save to storage and sync to main form
+          const filterSettings = await loadFilterSettingsFromStorage();
+          filterSettings.dateFilterDays = '';
+          await saveFilterSettingsToStorage(filterSettings);
+          applyFilterSettingsToDOM(filterSettings);
         }
       });
     }
     
     // Modal clear post limit button
     if (modalClearPostLimitBtn) {
-      modalClearPostLimitBtn.addEventListener('click', () => {
+      modalClearPostLimitBtn.addEventListener('click', async () => {
         const modalPostLimitInput = document.getElementById('modalPostLimit');
         if (modalPostLimitInput) {
           modalPostLimitInput.value = '';
-          // Sync to main form
-          const postLimitInput = document.getElementById('postLimit');
-          if (postLimitInput) {
-            postLimitInput.value = '';
-            updatePostLimitUI();
-          }
+          // Save to storage and sync to main form
+          const filterSettings = await loadFilterSettingsFromStorage();
+          filterSettings.postLimit = '';
+          await saveFilterSettingsToStorage(filterSettings);
+          applyFilterSettingsToDOM(filterSettings);
         }
+      });
+    }
+    
+    // Add real-time save event listeners to modal inputs
+    const modalDateFilterInput = document.getElementById('modalDateFilterDays');
+    const modalPostLimitInput = document.getElementById('modalPostLimit');
+    const modalAutoRefreshCheckbox = document.getElementById('modalAutoRefreshEnabled');
+    const modalAutoRefreshPostsInput = document.getElementById('modalAutoRefreshPosts');
+    
+    if (modalDateFilterInput) {
+      modalDateFilterInput.addEventListener('input', async () => {
+        const filterSettings = await loadFilterSettingsFromStorage();
+        filterSettings.dateFilterDays = modalDateFilterInput.value;
+        await saveFilterSettingsToStorage(filterSettings);
+        applyFilterSettingsToDOM(filterSettings);
+      });
+    }
+    
+    if (modalPostLimitInput) {
+      modalPostLimitInput.addEventListener('input', async () => {
+        const filterSettings = await loadFilterSettingsFromStorage();
+        filterSettings.postLimit = modalPostLimitInput.value;
+        await saveFilterSettingsToStorage(filterSettings);
+        applyFilterSettingsToDOM(filterSettings);
+      });
+    }
+    
+    if (modalAutoRefreshCheckbox) {
+      modalAutoRefreshCheckbox.addEventListener('change', async () => {
+        const filterSettings = await loadFilterSettingsFromStorage();
+        filterSettings.autoRefreshEnabled = modalAutoRefreshCheckbox.checked;
+        await saveFilterSettingsToStorage(filterSettings);
+        applyFilterSettingsToDOM(filterSettings);
+      });
+    }
+    
+    if (modalAutoRefreshPostsInput) {
+      modalAutoRefreshPostsInput.addEventListener('input', async () => {
+        const filterSettings = await loadFilterSettingsFromStorage();
+        filterSettings.autoRefreshPosts = parseInt(modalAutoRefreshPostsInput.value) || 15;
+        await saveFilterSettingsToStorage(filterSettings);
+        applyFilterSettingsToDOM(filterSettings);
       });
     }
 
@@ -1721,18 +1762,28 @@ JSON:`;
     const clearDateFilterBtn = document.getElementById('clearDateFilter');
     
     if (clearDateFilterBtn) {
-      clearDateFilterBtn.addEventListener('click', () => {
+      clearDateFilterBtn.addEventListener('click', async () => {
         if (dateFilterInput) {
           dateFilterInput.value = '';
           statusDiv.textContent = 'Date filter cleared. All posts will be included in exports.';
           updateDateFilterUI();
+          // Save to storage
+          const filterSettings = await loadFilterSettingsFromStorage();
+          filterSettings.dateFilterDays = '';
+          await saveFilterSettingsToStorage(filterSettings);
         }
       });
     }
 
     // Add event listener for date filter input changes
     if (dateFilterInput) {
-      dateFilterInput.addEventListener('input', updateDateFilterUI);
+      dateFilterInput.addEventListener('input', async () => {
+        updateDateFilterUI();
+        // Save to storage
+        const filterSettings = await loadFilterSettingsFromStorage();
+        filterSettings.dateFilterDays = dateFilterInput.value;
+        await saveFilterSettingsToStorage(filterSettings);
+      });
     }
 
     // Initialize the UI
@@ -1743,20 +1794,30 @@ JSON:`;
     const clearPostLimitBtn = document.getElementById('clearPostLimit');
     
     if (clearPostLimitBtn) {
-      clearPostLimitBtn.addEventListener('click', () => {
+      clearPostLimitBtn.addEventListener('click', async () => {
         if (postLimitInput) {
           postLimitInput.value = '';
           postLimit = 0;
           postLimitReached = false;
           statusDiv.textContent = 'Post limit cleared. Analysis will continue until manually stopped.';
           updatePostLimitUI();
+          // Save to storage
+          const filterSettings = await loadFilterSettingsFromStorage();
+          filterSettings.postLimit = '';
+          await saveFilterSettingsToStorage(filterSettings);
         }
       });
     }
 
     // Add event listener for post limit input changes
     if (postLimitInput) {
-      postLimitInput.addEventListener('input', updatePostLimitUI);
+      postLimitInput.addEventListener('input', async () => {
+        updatePostLimitUI();
+        // Save to storage
+        const filterSettings = await loadFilterSettingsFromStorage();
+        filterSettings.postLimit = postLimitInput.value;
+        await saveFilterSettingsToStorage(filterSettings);
+      });
     }
 
     // Initialize the post limit UI
@@ -1766,27 +1827,37 @@ JSON:`;
     const autoRefreshCheckbox = document.getElementById('autoRefreshEnabled');
     if (autoRefreshCheckbox) {
       autoRefreshCheckbox.checked = autoRefreshEnabled;
-          autoRefreshCheckbox.addEventListener('change', (e) => {
-      autoRefreshEnabled = e.target.checked;
-      console.log(`[S4S] Auto-refresh ${autoRefreshEnabled ? 'enabled' : 'disabled'}`);
-    });
+      autoRefreshCheckbox.addEventListener('change', async (e) => {
+        autoRefreshEnabled = e.target.checked;
+        console.log(`[S4S] Auto-refresh ${autoRefreshEnabled ? 'enabled' : 'disabled'}`);
+        // Save to storage
+        const filterSettings = await loadFilterSettingsFromStorage();
+        filterSettings.autoRefreshEnabled = e.target.checked;
+        await saveFilterSettingsToStorage(filterSettings);
+      });
+    }
 
     // Add auto-refresh posts count functionality
     const autoRefreshPostsInput = document.getElementById('autoRefreshPosts');
     if (autoRefreshPostsInput) {
-      autoRefreshPostsInput.addEventListener('change', (e) => {
+      autoRefreshPostsInput.addEventListener('change', async (e) => {
         const value = parseInt(e.target.value);
         if (value >= 10 && value <= 200) {
           console.log(`[S4S] Auto-refresh posts count changed to: ${value}`);
+          // Save to storage
+          const filterSettings = await loadFilterSettingsFromStorage();
+          filterSettings.autoRefreshPosts = value;
+          await saveFilterSettingsToStorage(filterSettings);
         } else {
           // Reset to valid value
           e.target.value = 50;
           console.log('[S4S] Auto-refresh posts count reset to 50 (invalid value)');
+          // Save to storage
+          const filterSettings = await loadFilterSettingsFromStorage();
+          filterSettings.autoRefreshPosts = 50;
+          await saveFilterSettingsToStorage(filterSettings);
         }
       });
-    }
-
-
     }
 
     // Initialize collapsible filters functionality
@@ -3082,7 +3153,7 @@ Niti`;
       'post_date',
       'post_content'
     ];
-    const header = ['Post Order', 'Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Connection Note', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
+    const header = ['Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Connection Note', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
     function escapeCSVField(field) {
       if (field === null || field === undefined) return '';
       const str = String(field);
@@ -3102,7 +3173,6 @@ Niti`;
     }
     // Map each lead to the correct keys, with fallback for profileurl, post_content, and posturl
     const rows = filteredLeads.map(lead => [
-      escapeCSVField(lead.postOrder || lead.postOrderText || ''),
       escapeCSVField(lead.name || ''),
       escapeCSVField(lead.title || 'Unknown Title'),
       escapeCSVField(lead.company || 'Unknown Company'),
@@ -3117,7 +3187,6 @@ Niti`;
     
     // Add summary row with total posts found metric
     const summaryRow = [
-      '', // Post Order
       'SUMMARY', // Name
       '', // Title
       '', // Company
@@ -3164,7 +3233,6 @@ Niti`;
     }
     
     const header = [
-      'Post Order', 
       'Name', 
       'Headline', 
       'Is Hiring', 
@@ -3201,7 +3269,6 @@ Niti`;
     
     // Map each analyzed post to CSV row
     const rows = filteredPosts.map(post => [
-      escapeCSVField(post.postOrder || post.postOrderText || ''),
       escapeCSVField(post.name || ''),
       escapeCSVField(post.headline || ''),
       escapeCSVField(post.isHiring ? 'YES' : 'NO'),
@@ -3220,7 +3287,6 @@ Niti`;
     
     // Add summary row with total posts found metric
     const summaryRow = [
-      '', // Post Order
       'SUMMARY', // Name
       '', // Headline
       '', // Is Hiring
@@ -3248,4 +3314,65 @@ Niti`;
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  // Function to save filter settings to storage
+  async function saveFilterSettingsToStorage(settings) {
+    try {
+      await chrome.storage.local.set({ filterSettings: settings });
+      console.log('[S4S] Filter settings saved to storage:', settings);
+      return true;
+    } catch (error) {
+      console.error('[S4S] Error saving filter settings to storage:', error);
+      return false;
+    }
+  }
+
+  // Function to load filter settings from storage
+  async function loadFilterSettingsFromStorage() {
+    try {
+      const result = await chrome.storage.local.get(['filterSettings']);
+      const settings = result.filterSettings || {
+        dateFilterDays: '',
+        postLimit: '',
+        autoRefreshEnabled: true,
+        autoRefreshPosts: 15
+      };
+      console.log('[S4S] Filter settings loaded from storage:', settings);
+      return settings;
+    } catch (error) {
+      console.error('[S4S] Error loading filter settings from storage:', error);
+      return {
+        dateFilterDays: '',
+        postLimit: '',
+        autoRefreshEnabled: true,
+        autoRefreshPosts: 15
+      };
+    }
+  }
+
+  // Function to apply filter settings to DOM elements
+  function applyFilterSettingsToDOM(settings) {
+    const dateFilterInput = document.getElementById('dateFilterDays');
+    const modalDateFilterInput = document.getElementById('modalDateFilterDays');
+    const postLimitInput = document.getElementById('postLimit');
+    const modalPostLimitInput = document.getElementById('modalPostLimit');
+    const autoRefreshCheckbox = document.getElementById('autoRefreshEnabled');
+    const modalAutoRefreshCheckbox = document.getElementById('modalAutoRefreshEnabled');
+    const autoRefreshPostsInput = document.getElementById('autoRefreshPosts');
+    const modalAutoRefreshPostsInput = document.getElementById('modalAutoRefreshPosts');
+
+    if (dateFilterInput) dateFilterInput.value = settings.dateFilterDays || '';
+    if (modalDateFilterInput) modalDateFilterInput.value = settings.dateFilterDays || '';
+    if (postLimitInput) postLimitInput.value = settings.postLimit || '';
+    if (modalPostLimitInput) modalPostLimitInput.value = settings.postLimit || '';
+    if (autoRefreshCheckbox) autoRefreshCheckbox.checked = settings.autoRefreshEnabled !== false;
+    if (modalAutoRefreshCheckbox) modalAutoRefreshCheckbox.checked = settings.autoRefreshEnabled !== false;
+    if (autoRefreshPostsInput) autoRefreshPostsInput.value = settings.autoRefreshPosts || 15;
+    if (modalAutoRefreshPostsInput) modalAutoRefreshPostsInput.value = settings.autoRefreshPosts || 15;
+
+    // Update UI
+    updateDateFilterUI();
+    updatePostLimitUI();
+    autoRefreshEnabled = settings.autoRefreshEnabled !== false;
   }
