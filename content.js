@@ -323,8 +323,26 @@ if (window.s4sContentScriptLoaded) {
           }
         }
         
-        // Check if this is a repost and extract original content
+        // Check if this is a repost and extract original content and author information
         const repostInfo = detectAndExtractRepostContent(post);
+        
+        // If this is a repost and we found original author information, use it instead of the reposter's info
+        if (repostInfo.isRepost && repostInfo.originalAuthor) {
+          console.log(`[S4S] Post ${index + 1} is a repost, using original author: "${repostInfo.originalAuthor}" instead of reposter: "${name}"`);
+          name = repostInfo.originalAuthor;
+          
+          // Also use original headline if available
+          if (repostInfo.originalHeadline) {
+            console.log(`[S4S] Post ${index + 1} using original headline: "${repostInfo.originalHeadline}" instead of reposter headline: "${headline}"`);
+            headline = repostInfo.originalHeadline;
+          }
+          
+          // Also use original author's profile URL if available
+          if (repostInfo.originalAuthorProfileUrl) {
+            console.log(`[S4S] Post ${index + 1} using original author profile URL: "${repostInfo.originalAuthorProfileUrl}" instead of reposter profile: "${linkedinUrl}"`);
+            linkedinUrl = repostInfo.originalAuthorProfileUrl;
+          }
+        }
         
         // If main content is empty or very short, look for reposted content
         if (!content || content.length < 50) {
@@ -393,6 +411,30 @@ if (window.s4sContentScriptLoaded) {
           // Combine them with clear separation
           content = `${commentary}\n\n--- Original Post ---\n${originalContent}`;
           console.log(`[S4S] Post ${index + 1} combined repost commentary with original content`);
+        }
+        
+        // If this is a repost but we don't have original author info, try to extract it from the content
+        if (repostInfo.isRepost && !repostInfo.originalAuthor && content) {
+          console.log(`[S4S] Post ${index + 1} repost detected but no original author found, trying to extract from content...`);
+          
+          // Look for patterns that might indicate the original author in the content
+          const authorPatterns = [
+            /(?:by|from|via|shared by)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i,
+            /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:posted|wrote|shared)/i,
+            /(?:check out|look at)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'s/i
+          ];
+          
+          for (const pattern of authorPatterns) {
+            const match = content.match(pattern);
+            if (match && match[1]) {
+              const potentialAuthor = match[1].trim();
+              if (potentialAuthor.length > 2 && potentialAuthor.length < 50 && potentialAuthor !== name) {
+                console.log(`[S4S] Post ${index + 1} extracted potential original author from content: "${potentialAuthor}"`);
+                name = potentialAuthor;
+                break;
+              }
+            }
+          }
         }
         
         // If still no content, try to find any meaningful text in the post
@@ -481,12 +523,12 @@ if (window.s4sContentScriptLoaded) {
     }
 
   /**
-   * Detects if a post is a repost and extracts the original content
+   * Detects if a post is a repost and extracts the original content and author information
    * @param {Element} post - The DOM element containing the LinkedIn post
-   * @returns {Object} - Object with isRepost boolean and originalContent string
+   * @returns {Object} - Object with isRepost boolean, originalContent string, originalAuthor, and originalHeadline
    */
   function detectAndExtractRepostContent(post) {
-    if (!post) return { isRepost: false, originalContent: '' };
+    if (!post) return { isRepost: false, originalContent: '', originalAuthor: '', originalHeadline: '' };
     
     // Look for repost indicators
     const repostIndicators = [
@@ -503,7 +545,26 @@ if (window.s4sContentScriptLoaded) {
       'worth sharing',
       'must read',
       'interesting',
-      'thought this was worth sharing'
+      'thought this was worth sharing',
+      'this is great',
+      'love this',
+      'fantastic',
+      'excellent',
+      'brilliant',
+      'spot on',
+      'absolutely',
+      'completely agree',
+      'couldn\'t agree more',
+      'well said',
+      'perfect',
+      'spot on',
+      'nailed it',
+      'so true',
+      'this resonates',
+      'this speaks to me',
+      'thank you for sharing',
+      'thanks for posting',
+      'appreciate you sharing'
     ];
     
     // Check if the main content contains repost indicators
@@ -524,7 +585,24 @@ if (window.s4sContentScriptLoaded) {
       '.feed-shared-update-v2__content-wrapper',
       '[data-test-id="repost-content"]',
       '.repost-content',
-      '.shared-update-content'
+      '.shared-update-content',
+      '.feed-shared-update-v2__content--has-nested-content',
+      '.feed-shared-update-v2__content--has-quote',
+      '.feed-shared-update-v2__content--has-article',
+      '.feed-shared-update-v2__content--has-video',
+      '.feed-shared-update-v2__content--has-image',
+      '.feed-shared-update-v2__content--has-document',
+      '.feed-shared-update-v2__content--has-poll',
+      '.feed-shared-update-v2__content--has-event',
+      '.feed-shared-update-v2__content--has-job',
+      '.feed-shared-update-v2__content--has-company-update',
+      '.feed-shared-update-v2__content--has-group-post',
+      '.feed-shared-update-v2__content--has-newsletter',
+      '.feed-shared-update-v2__content--has-news',
+      '.feed-shared-update-v2__content--has-blog',
+      '.feed-shared-update-v2__content--has-article-preview',
+      '.feed-shared-update-v2__content--has-external-link',
+      '.feed-shared-update-v2__content--has-internal-link'
     ];
     
     for (const selector of repostStructureSelectors) {
@@ -535,11 +613,29 @@ if (window.s4sContentScriptLoaded) {
       }
     }
     
+    // Additional check: look for nested post-like structures that might indicate a repost
     if (!isRepost) {
-      return { isRepost: false, originalContent: '' };
+      const nestedPostSelectors = [
+        '.feed-shared-update-v2__content .feed-shared-update-v2',
+        '.feed-shared-update-v2__content article',
+        '.feed-shared-update-v2__content .feed-shared-actor__container',
+        '.feed-shared-update-v2__content .update-components-actor'
+      ];
+      
+      for (const selector of nestedPostSelectors) {
+        if (post.querySelector(selector)) {
+          isRepost = true;
+          console.log(`[S4S] Detected nested post structure indicating repost: ${selector}`);
+          break;
+        }
+      }
     }
     
-    // Extract the original content from the repost
+    if (!isRepost) {
+      return { isRepost: false, originalContent: '', originalAuthor: '', originalHeadline: '' };
+    }
+    
+    // Extract the original content and author information from the repost
     const originalContentSelectors = [
       // Nested content within repost containers
       '.feed-shared-update-v2__content .feed-shared-update-v2__description',
@@ -561,7 +657,101 @@ if (window.s4sContentScriptLoaded) {
     
     let originalContent = '';
     let bestContent = '';
+    let originalAuthor = '';
+    let originalHeadline = '';
     
+    // First, try to find the original author information within the repost
+    const repostAuthorSelectors = [
+      // Original author name within repost containers
+      '.feed-shared-update-v2__content .feed-shared-actor__name',
+      '.feed-shared-update-v2__content .update-components-actor__name',
+      '.feed-shared-update-v2__content span[aria-hidden="true"]',
+      '.feed-shared-update-v2__content a[data-control-name="actor_profile"] span',
+      '.feed-shared-update-v2__content span.t-bold',
+      '.feed-shared-update-v2__content span[class*="name"]',
+      
+      // Repost specific author selectors
+      '[data-test-id="repost-content"] .feed-shared-actor__name',
+      '[data-test-id="repost-content"] .update-components-actor__name',
+      '[data-test-id="repost-content"] span[aria-hidden="true"]',
+      '.repost-content .feed-shared-actor__name',
+      '.shared-update-content .feed-shared-actor__name'
+    ];
+    
+    // Look for original author name and profile URL
+    let originalAuthorProfileUrl = '';
+    for (const selector of repostAuthorSelectors) {
+      const authorElems = post.querySelectorAll(selector);
+      for (const authorElem of authorElems) {
+        const text = authorElem.innerText.trim();
+        if (text && text.length > 1 && text.length < 50 && 
+            !text.includes('•') && 
+            !text.includes('Follow') && 
+            !text.includes('Connect') &&
+            !text.includes('1st') && 
+            !text.includes('2nd') && 
+            !text.includes('3rd+')) {
+          originalAuthor = text;
+          console.log(`[S4S] Found original author in repost: "${originalAuthor}"`);
+          
+          // Try to find the original author's profile URL
+          const authorContainer = authorElem.closest('.feed-shared-actor__container, .update-components-actor, [class*="actor"]');
+          if (authorContainer) {
+            const profileSelectors = [
+              'a[data-control-name="actor_profile"]',
+              'a[href*="/in/"]',
+              'a[href*="linkedin.com/in/"]'
+            ];
+            
+            for (const profileSelector of profileSelectors) {
+              const profileLink = authorContainer.querySelector(profileSelector);
+              if (profileLink && profileLink.href) {
+                originalAuthorProfileUrl = profileLink.href;
+                console.log(`[S4S] Found original author profile URL: ${originalAuthorProfileUrl}`);
+                break;
+              }
+            }
+          }
+          break;
+        }
+      }
+      if (originalAuthor) break;
+    }
+    
+    // Look for original author headline
+    const repostHeadlineSelectors = [
+      // Original author headline within repost containers
+      '.feed-shared-update-v2__content .update-components-actor__description span[aria-hidden="true"]',
+      '.feed-shared-update-v2__content .feed-shared-actor__subline span[aria-hidden="true"]',
+      '.feed-shared-update-v2__content .feed-shared-actor__description span[aria-hidden="true"]',
+      '.feed-shared-update-v2__content span[data-test-id="actor-subline"] span[aria-hidden="true"]',
+      '.feed-shared-update-v2__content span[aria-hidden="true"]',
+      
+      // Repost specific headline selectors
+      '[data-test-id="repost-content"] .update-components-actor__description span[aria-hidden="true"]',
+      '[data-test-id="repost-content"] .feed-shared-actor__subline span[aria-hidden="true"]',
+      '.repost-content .update-components-actor__description span[aria-hidden="true"]',
+      '.shared-update-content .update-components-actor__description span[aria-hidden="true"]'
+    ];
+    
+    for (const selector of repostHeadlineSelectors) {
+      const headlineElems = post.querySelectorAll(selector);
+      for (const headlineElem of headlineElems) {
+        const text = headlineElem.innerText.trim();
+        if (text && text.length > 2 && text.length < 200 && 
+            text !== originalAuthor &&
+            !text.includes('•') && 
+            !text.includes('Follow') && 
+            !text.includes('Connect')) {
+          originalHeadline = text;
+          console.log(`[S4S] Found original headline in repost: "${originalHeadline}"`);
+          break;
+        }
+      }
+      if (originalHeadline) break;
+    }
+    
+    // Extract the original content
     for (const selector of originalContentSelectors) {
       const elements = post.querySelectorAll(selector);
       for (const elem of elements) {
@@ -588,7 +778,33 @@ if (window.s4sContentScriptLoaded) {
       console.log(`[S4S] Extracted original repost content: "${originalContent.substring(0, 100)}..."`);
     }
     
-    return { isRepost, originalContent };
+    // If we still don't have original author info but have content, try to extract it from the content
+    if (!originalAuthor && originalContent) {
+      console.log(`[S4S] No original author found in DOM, trying to extract from content...`);
+      
+      // Look for patterns that might indicate the original author in the content
+      const authorPatterns = [
+        /(?:by|from|via|shared by)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i,
+        /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:posted|wrote|shared)/i,
+        /(?:check out|look at)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'s/i,
+        /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:says|writes|shares)/i,
+        /(?:according to|as stated by)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i
+      ];
+      
+      for (const pattern of authorPatterns) {
+        const match = originalContent.match(pattern);
+        if (match && match[1]) {
+          const potentialAuthor = match[1].trim();
+          if (potentialAuthor.length > 2 && potentialAuthor.length < 50) {
+            originalAuthor = potentialAuthor;
+            console.log(`[S4S] Extracted original author from content: "${originalAuthor}"`);
+            break;
+          }
+        }
+      }
+    }
+    
+    return { isRepost, originalContent, originalAuthor, originalHeadline, originalAuthorProfileUrl };
   }
 
   /**
@@ -1329,11 +1545,19 @@ if (window.s4sContentScriptLoaded) {
       console.log(`[S4S] Post ${index + 1}:`, {
         isRepost: repostInfo.isRepost,
         originalContentLength: repostInfo.originalContent.length,
-        originalContentPreview: repostInfo.originalContent.substring(0, 100) + '...'
+        originalContentPreview: repostInfo.originalContent.substring(0, 100) + '...',
+        originalAuthor: repostInfo.originalAuthor,
+        originalHeadline: repostInfo.originalHeadline,
+        originalAuthorProfileUrl: repostInfo.originalAuthorProfileUrl
       });
       
       if (repostInfo.isRepost) {
-        console.log(`[S4S] Post ${index + 1} REPOST DETECTED! Original content:`, repostInfo.originalContent);
+        console.log(`[S4S] Post ${index + 1} REPOST DETECTED!`, {
+          originalContent: repostInfo.originalContent.substring(0, 200) + '...',
+          originalAuthor: repostInfo.originalAuthor,
+          originalHeadline: repostInfo.originalHeadline,
+          originalAuthorProfileUrl: repostInfo.originalAuthorProfileUrl
+        });
       }
     });
   }
