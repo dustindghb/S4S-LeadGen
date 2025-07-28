@@ -744,6 +744,35 @@ The system will automatically replace these placeholders with actual post data w
           </div>
         </div>
         
+        <!-- Approved Vendors/Clients Section -->
+        <div class="settings-section">
+          <h3>Approved Vendors & Clients</h3>
+          <div class="filter-help" style="margin-bottom: 15px;">
+            Add companies that are approved vendors or clients. Messages to these companies will include special re-introduction text.
+          </div>
+          
+          <div style="margin-bottom: 15px;">
+            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+              <input
+                type="text"
+                id="modalApprovedCompanyName"
+                placeholder="Enter company name"
+                style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;"
+              >
+              <button id="modalAddApprovedCompany" class="save-prompt-btn" style="width: auto;">
+                Add Company
+              </button>
+            </div>
+            <div class="filter-help">
+              Enter the exact company name as it appears on LinkedIn (e.g., "NetApp", "AWS", "Salesforce")
+            </div>
+          </div>
+          
+          <div id="modalApprovedCompaniesList" style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px; background: #f9f9f9;">
+            <div style="text-align: center; color: #666; font-style: italic;">No approved companies added yet</div>
+          </div>
+        </div>
+        
         <!-- AI Provider Section -->
         <div class="settings-section">
           <h3>AI Provider Configuration</h3>

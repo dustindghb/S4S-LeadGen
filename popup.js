@@ -1155,8 +1155,16 @@ JSON:`;
         const filterSettings = await loadFilterSettingsFromStorage();
         applyFilterSettingsToDOM(filterSettings);
         console.log('[S4S] Filter settings initialized from storage');
+        
+        // Initialize default approved companies if none exist
+        const approvedCompanies = await loadApprovedCompaniesFromStorage();
+        if (approvedCompanies.length === 0) {
+          const defaultCompanies = ['NetApp', 'AWS', 'Salesforce', 'ServiceNow', 'HPE'];
+          await saveApprovedCompaniesToStorage(defaultCompanies);
+          console.log('[S4S] Initialized default approved companies:', defaultCompanies);
+        }
       } catch (error) {
-        console.error('[S4S] Error initializing filter settings:', error);
+        console.error('[S4S] Error initializing settings:', error);
       }
     })();
     
@@ -1219,6 +1227,9 @@ JSON:`;
         modalOpenaiConfig.style.display = modalOpenaiProviderRadio.checked ? 'block' : 'none';
       }
       
+      // Load approved companies
+      const approvedCompanies = await loadApprovedCompaniesFromStorage();
+      renderApprovedCompaniesList(approvedCompanies);
 
     }
     
@@ -2044,20 +2055,36 @@ JSON:`;
       
       statusDiv.textContent = `Found ${leadsCount} leads!`;
       resultsDiv.innerHTML = `<div style="background: #e3f2fd; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 12px; color: #1976d2; border-left: 4px solid #2196f3;">Analysis complete! Found ${leadsCount} leads. Use the download buttons to export results.</div>`;
-      exportLeadsToCSV(streamingLeads);
+      await exportLeadsToCSV(streamingLeads);
     });
 
     // Add button to download all analyzed posts for review
-    const downloadAllPostsBtn = window.createDownloadAllPostsButton(controlsDiv, () => {
+    const downloadAllPostsBtn = window.createDownloadAllPostsButton(controlsDiv, async () => {
       if (allAnalyzedPosts.length === 0) {
         statusDiv.textContent = 'Error: No analyzed posts found. Please start scrolling to analyze posts.';
         return;
       }
       
       statusDiv.textContent = `Downloading ${allAnalyzedPosts.length} analyzed posts for review...`;
-      exportAllPostsToCSV();
+      await exportAllPostsToCSV();
       statusDiv.textContent = `Downloaded ${allAnalyzedPosts.length} analyzed posts for review.`;
     });
+
+    // Approved Companies Event Listeners
+    const modalAddApprovedCompanyBtn = document.getElementById('modalAddApprovedCompany');
+    if (modalAddApprovedCompanyBtn) {
+      modalAddApprovedCompanyBtn.addEventListener('click', addApprovedCompany);
+    }
+
+    // Add Enter key support for the company name input
+    const modalApprovedCompanyNameInput = document.getElementById('modalApprovedCompanyName');
+    if (modalApprovedCompanyNameInput) {
+      modalApprovedCompanyNameInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          addApprovedCompany();
+        }
+      });
+    }
   });
 
   // New: Function to analyze a single post in real-time
@@ -2659,8 +2686,110 @@ JSON:`;
     console.log('[S4S] Stopped button health monitoring');
   }
 
+  // Function to save approved companies to storage
+  async function saveApprovedCompaniesToStorage(companies) {
+    try {
+      await chrome.storage.local.set({ approvedCompanies: companies });
+      console.log('[S4S] Saved approved companies to storage:', companies);
+    } catch (error) {
+      console.error('[S4S] Error saving approved companies:', error);
+    }
+  }
+
+  // Function to load approved companies from storage
+  async function loadApprovedCompaniesFromStorage() {
+    try {
+      const result = await chrome.storage.local.get(['approvedCompanies']);
+      return result.approvedCompanies || [];
+    } catch (error) {
+      console.error('[S4S] Error loading approved companies:', error);
+      return [];
+    }
+  }
+
+  // Function to check if a company is an approved vendor/client
+  async function isApprovedCompany(companyName) {
+    if (!companyName) return false;
+    
+    try {
+      const approvedCompanies = await loadApprovedCompaniesFromStorage();
+      return approvedCompanies.some(company => 
+        company.toLowerCase().trim() === companyName.toLowerCase().trim()
+      );
+    } catch (error) {
+      console.error('[S4S] Error checking approved company:', error);
+      return false;
+    }
+  }
+
+  // Function to render approved companies list
+  function renderApprovedCompaniesList(companies) {
+    const listContainer = document.getElementById('modalApprovedCompaniesList');
+    if (!listContainer) return;
+
+    if (companies.length === 0) {
+      listContainer.innerHTML = '<div style="text-align: center; color: #666; font-style: italic;">No approved companies added yet</div>';
+      return;
+    }
+
+    const companiesHtml = companies.map(company => `
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; margin: 4px 0; background: white; border-radius: 4px; border: 1px solid #e0e0e0;">
+        <span style="font-size: 12px;">${company}</span>
+        <button 
+          onclick="removeApprovedCompany('${company}')" 
+          style="background: #dc3545; color: white; border: none; padding: 4px 8px; border-radius: 3px; font-size: 10px; cursor: pointer;"
+          title="Remove company"
+        >
+          ×
+        </button>
+      </div>
+    `).join('');
+
+    listContainer.innerHTML = companiesHtml;
+  }
+
+  // Function to add approved company
+  async function addApprovedCompany() {
+    const input = document.getElementById('modalApprovedCompanyName');
+    const companyName = input.value.trim();
+    
+    if (!companyName) {
+      alert('Please enter a company name');
+      return;
+    }
+
+    const approvedCompanies = await loadApprovedCompaniesFromStorage();
+    
+    // Check if company already exists
+    if (approvedCompanies.some(company => company.toLowerCase() === companyName.toLowerCase())) {
+      alert('This company is already in the approved list');
+      return;
+    }
+
+    // Add company to list
+    approvedCompanies.push(companyName);
+    await saveApprovedCompaniesToStorage(approvedCompanies);
+    
+    // Update UI
+    renderApprovedCompaniesList(approvedCompanies);
+    input.value = '';
+    
+    console.log('[S4S] Added approved company:', companyName);
+  }
+
+  // Function to remove approved company
+  async function removeApprovedCompany(companyName) {
+    const approvedCompanies = await loadApprovedCompaniesFromStorage();
+    const filteredCompanies = approvedCompanies.filter(company => company !== companyName);
+    
+    await saveApprovedCompaniesToStorage(filteredCompanies);
+    renderApprovedCompaniesList(filteredCompanies);
+    
+    console.log('[S4S] Removed approved company:', companyName);
+  }
+
   // New: Function to generate personalized connection messages
-  function generateConnectionMessage(name, connectionDegree, title) {
+  async function generateConnectionMessage(name, connectionDegree, title, company) {
     // Check if this is a company account
     const isCompanyAccount = title && (title.toLowerCase().includes('company account') || title.toLowerCase().includes('business account'));
     
@@ -2673,11 +2802,35 @@ JSON:`;
     // Clean up connection degree
     const cleanConnectionDegree = connectionDegree ? connectionDegree.toLowerCase().replace(/\s+/g, '') : '3rd';
     
+    // Check if this is an approved company
+    const isApproved = await isApprovedCompany(company);
+    
     // If it's a 1st connection, use re-introduction message
     if (cleanConnectionDegree.includes('1st') || cleanConnectionDegree.includes('first')) {
       const greeting = isCompanyAccount ? 'Hey there' : `Hi ${firstName}`;
       
-      return `${greeting},
+      if (isApproved) {
+        return `${greeting},
+
+I noticed on LinkedIn that you are hiring for your team.
+
+I wanted to take a moment to re-introduce myself and my company, Stage 4 Solutions, an interim staffing company ranked on the Inc. 5000 list five times for consistent growth. We are an approved vendor for "${company}".
+
+For the last 23 years, we have filled gaps across marketing, IT and operations teams - nationwide. We are in the top 9% of staffing firms nationally!
+
+I noticed on LinkedIn that you are hiring for your team. We have quickly filled gaps at our clients such as NetApp, AWS, Salesforce, ServiceNow, and HPE. Here's what our clients say about us: https://www.stage4solutions.com/clientsuccess/testimonials/
+
+We specialize in providing timely, cost-effective, and well-qualified professionals for contract (full or part-time) and contract to perm roles.
+
+I would love to support you in filling any gaps in your team with well-qualified contractors.
+
+What is a good time to talk over the next couple of weeks? Please let me know and I will send you a meeting invite.
+
+Looking forward to our conversation,
+
+Niti`;
+      } else {
+        return `${greeting},
 
 I noticed on LinkedIn that you are hiring for your team.
 
@@ -2696,6 +2849,7 @@ What is a good time to talk over the next couple of weeks? Please let me know an
 Looking forward to our conversation,
 
 Niti`;
+      }
     }
     
     if (cleanConnectionDegree.includes('2nd') || cleanConnectionDegree.includes('second')) {
@@ -3147,7 +3301,7 @@ Niti`;
   }
 
   // Function to export leads to CSV
-  function exportLeadsToCSV(leads) {
+  async function exportLeadsToCSV(leads) {
     if (!leads || !leads.length) {
       alert('No leads to export!');
       return;
@@ -3197,18 +3351,18 @@ Niti`;
       return cleanedStr;
     }
     // Map each lead to the correct keys, with fallback for profileurl, post_content, and posturl
-    const rows = filteredLeads.map(lead => [
+    const rows = await Promise.all(filteredLeads.map(async lead => [
       escapeCSVField(lead.name || ''),
       escapeCSVField(lead.title || 'Unknown Title'),
       escapeCSVField(lead.company || 'Unknown Company'),
       escapeCSVField(lead.position || 'None found in post'),
       escapeCSVField(lead.connection_degree || lead.connectionDegree || '3rd'),
-      escapeCSVField(generateConnectionMessage(lead.name, lead.connection_degree || lead.connectionDegree, lead.title)),
+      escapeCSVField(await generateConnectionMessage(lead.name, lead.connection_degree || lead.connectionDegree, lead.title, lead.company)),
       escapeCSVField(lead.posturl || lead.postUrl || ''),
       escapeCSVField(lead.profileurl || lead.linkedin_profile_url || lead.linkedinUrl || ''),
       escapeCSVField(lead.post_date || lead.postDate || ''),
       escapeCSVField(lead.post_content || lead.content || '')
-    ]);
+    ]));
     
     // Add summary row with total posts found metric
     const summaryRow = [
@@ -3238,7 +3392,7 @@ Niti`;
   }
 
   // Function to export all analyzed posts to CSV for review
-  function exportAllPostsToCSV() {
+  async function exportAllPostsToCSV() {
     if (!allAnalyzedPosts || !allAnalyzedPosts.length) {
       alert('No analyzed posts to export!');
       return;
@@ -3293,7 +3447,7 @@ Niti`;
     }
     
     // Map each analyzed post to CSV row
-    const rows = filteredPosts.map(post => [
+    const rows = await Promise.all(filteredPosts.map(async post => [
       escapeCSVField(post.name || ''),
       escapeCSVField(post.headline || ''),
       escapeCSVField(post.isHiring ? 'YES' : 'NO'),
@@ -3301,14 +3455,14 @@ Niti`;
       escapeCSVField(post.company || ''),
       escapeCSVField(post.position || 'None found in post'),
       escapeCSVField(post.connection_degree || post.connectionDegree || '3rd'),
-      escapeCSVField(generateConnectionMessage(post.name, post.connection_degree || post.connectionDegree, post.title)),
+      escapeCSVField(await generateConnectionMessage(post.name, post.connection_degree || post.connectionDegree, post.title, post.company)),
       escapeCSVField(post.posturl || post.postUrl || ''),
       escapeCSVField(post.profileurl || post.linkedin_profile_url || post.linkedinUrl || ''),
       escapeCSVField(post.post_date || post.postDate || ''),
       escapeCSVField(post.post_content || post.content || ''),
       escapeCSVField(post.analysisError || ''),
       escapeCSVField(post.analyzedAt || '')
-    ]);
+    ]));
     
     // Add summary row with total posts found metric
     const summaryRow = [

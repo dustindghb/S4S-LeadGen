@@ -1,5 +1,5 @@
 // Export leads to CSV (opens in Excel)
-window.exportLeadsToCSV = function(leads) {
+window.exportLeadsToCSV = async function(leads) {
   if (!leads || !Array.isArray(leads) || leads.length === 0) {
     alert('No leads to export!');
     return;
@@ -19,6 +19,104 @@ window.exportLeadsToCSV = function(leads) {
     
     return str;
   }
+
+  // Function to check if a company is an approved vendor/client
+  async function isApprovedCompany(companyName) {
+    if (!companyName) return false;
+    
+    try {
+      const result = await chrome.storage.local.get(['approvedCompanies']);
+      const approvedCompanies = result.approvedCompanies || [];
+      return approvedCompanies.some(company => 
+        company.toLowerCase().trim() === companyName.toLowerCase().trim()
+      );
+    } catch (error) {
+      console.error('[S4S] Error checking approved company:', error);
+      return false;
+    }
+  }
+
+  // Function to generate connection message
+  async function generateConnectionMessage(name, connectionDegree, title, company) {
+    // Check if this is a company account
+    const isCompanyAccount = title && (title.toLowerCase().includes('company account') || title.toLowerCase().includes('business account'));
+    
+    // Extract first name from full name (only if not a company account)
+    let firstName = 'there';
+    if (!isCompanyAccount && name) {
+      firstName = name.split(' ')[0];
+    }
+    
+    // Clean up connection degree
+    const cleanConnectionDegree = connectionDegree ? connectionDegree.toLowerCase().replace(/\s+/g, '') : '3rd';
+    
+    // Check if this is an approved company
+    const isApproved = await isApprovedCompany(company);
+    
+    // If it's a 1st connection, use re-introduction message
+    if (cleanConnectionDegree.includes('1st') || cleanConnectionDegree.includes('first')) {
+      const greeting = isCompanyAccount ? 'Hey there' : `Hi ${firstName}`;
+      
+      if (isApproved) {
+        return `${greeting},
+
+I noticed on LinkedIn that you are hiring for your team.
+
+I wanted to take a moment to re-introduce myself and my company, Stage 4 Solutions, an interim staffing company ranked on the Inc. 5000 list five times for consistent growth. We are an approved vendor for "${company}".
+
+For the last 23 years, we have filled gaps across marketing, IT and operations teams - nationwide. We are in the top 9% of staffing firms nationally!
+
+I noticed on LinkedIn that you are hiring for your team. We have quickly filled gaps at our clients such as NetApp, AWS, Salesforce, ServiceNow, and HPE. Here's what our clients say about us: https://www.stage4solutions.com/clientsuccess/testimonials/
+
+We specialize in providing timely, cost-effective, and well-qualified professionals for contract (full or part-time) and contract to perm roles.
+
+I would love to support you in filling any gaps in your team with well-qualified contractors.
+
+What is a good time to talk over the next couple of weeks? Please let me know and I will send you a meeting invite.
+
+Looking forward to our conversation,
+
+Niti`;
+      } else {
+        return `${greeting},
+
+I noticed on LinkedIn that you are hiring for your team.
+
+I wanted to take a moment to re-introduce myself and my company, Stage 4 Solutions, an interim staffing company ranked on the Inc. 5000 list five times for consistent growth.
+
+For the last 23 years, we have filled gaps across marketing, IT and operations teams - nationwide. We are in the top 9% of staffing firms nationally!
+
+I noticed on LinkedIn that you are hiring for your team. We have quickly filled gaps at our clients such as NetApp, AWS, Salesforce, ServiceNow, and HPE. Here's what our clients say about us: https://www.stage4solutions.com/clientsuccess/testimonials/
+
+We specialize in providing timely, cost-effective, and well-qualified professionals for contract (full or part-time) and contract to perm roles.
+
+I would love to support you in filling any gaps in your team with well-qualified contractors.
+
+What is a good time to talk over the next couple of weeks? Please let me know and I will send you a meeting invite.
+
+Looking forward to our conversation,
+
+Niti`;
+      }
+    }
+    
+    if (cleanConnectionDegree.includes('2nd') || cleanConnectionDegree.includes('second')) {
+      return `Hi ${firstName},
+
+I am the CEO of Stage 4 Solutions, a consulting and interim staffing company ranked on Inc.5000 list five times. We share many connections on LinkedIn. I noticed your company is growing and thought it would be great to connect.
+
+Thanks!
+Niti`;
+    } else {
+      // Default for 3rd connections and any other degree
+      return `Hi ${firstName},
+
+I am the CEO of Stage 4 Solutions, a consulting and interim staffing company ranked on Inc.5000 list five times. I noticed your company is growing and thought it would be great to connect.
+
+Thanks!
+Niti`;
+    }
+  }
   
   // Create CSV content
   const headers = ['Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Connection Note', 'Post URL', 'LinkedIn Profile URL', 'Post Date', 'Post Content'];
@@ -28,34 +126,14 @@ window.exportLeadsToCSV = function(leads) {
   csvRows.push(headers.map(escapeCSVField).join(','));
   
   // Add data rows
-  leads.forEach(lead => {
+  for (const lead of leads) {
     // Generate connection message
-    const isCompanyAccount = lead.title && (lead.title.toLowerCase().includes('company account') || lead.title.toLowerCase().includes('business account'));
-    
-    let firstName = 'there';
-    if (!isCompanyAccount && lead.name) {
-      firstName = lead.name.split(' ')[0];
-    }
-    
-    const connectionDegree = lead.connectionDegree || '3rd';
-    const cleanConnectionDegree = connectionDegree.toLowerCase().replace(/\s+/g, '');
-    
-    let connectionMessage;
-    if (cleanConnectionDegree.includes('2nd') || cleanConnectionDegree.includes('second')) {
-      connectionMessage = `Hi ${firstName},
-
-I am the CEO of Stage 4 Solutions, a consulting and interim staffing company ranked on Inc.5000 list five times. We share many connections on LinkedIn. I noticed your company is growing and thought it would be great to connect.
-
-Thanks!
-Niti`;
-    } else {
-      connectionMessage = `Hi ${firstName},
-
-I am the CEO of Stage 4 Solutions, a consulting and interim staffing company ranked on Inc.5000 list five times. I noticed your company is growing and thought it would be great to connect.
-
-Thanks!
-Niti`;
-    }
+    const connectionMessage = await generateConnectionMessage(
+      lead.name, 
+      lead.connectionDegree || '3rd', 
+      lead.title, 
+      lead.company
+    );
     
     const row = [
       lead.name || '',
@@ -70,7 +148,7 @@ Niti`;
       lead.content || lead.post_content || lead.message || ''
     ];
     csvRows.push(row.map(escapeCSVField).join(','));
-  });
+  }
   
   const csvContent = csvRows.join('\n');
   
@@ -89,3 +167,54 @@ Niti`;
 
 // Keep the old function name for backward compatibility
 window.exportLeadsToExcel = window.exportLeadsToCSV;
+
+// Helper functions for approved companies (for testing)
+async function loadApprovedCompaniesFromStorage() {
+  try {
+    const result = await chrome.storage.local.get(['approvedCompanies']);
+    return result.approvedCompanies || [];
+  } catch (error) {
+    console.error('[S4S] Error loading approved companies:', error);
+    return [];
+  }
+}
+
+async function saveApprovedCompaniesToStorage(companies) {
+  try {
+    await chrome.storage.local.set({ approvedCompanies: companies });
+    console.log('[S4S] Saved approved companies to storage:', companies);
+  } catch (error) {
+    console.error('[S4S] Error saving approved companies:', error);
+  }
+}
+
+// Test function for approved companies functionality
+window.testApprovedCompanies = async function() {
+  console.log('[S4S] Testing approved companies functionality...');
+  
+  // Test adding a company
+  const testCompany = 'Test Company ' + Date.now();
+  const approvedCompanies = await loadApprovedCompaniesFromStorage();
+  approvedCompanies.push(testCompany);
+  await saveApprovedCompaniesToStorage(approvedCompanies);
+  console.log('[S4S] Added test company:', testCompany);
+  
+  // Test checking if company is approved
+  const isApproved = await isApprovedCompany(testCompany);
+  console.log('[S4S] Is test company approved?', isApproved);
+  
+  // Test message generation for approved company
+  const approvedMessage = await generateConnectionMessage('John Doe', '1st', 'Manager', testCompany);
+  console.log('[S4S] Message for approved company:', approvedMessage.substring(0, 100) + '...');
+  
+  // Test message generation for non-approved company
+  const nonApprovedMessage = await generateConnectionMessage('Jane Smith', '1st', 'Manager', 'Random Company');
+  console.log('[S4S] Message for non-approved company:', nonApprovedMessage.substring(0, 100) + '...');
+  
+  // Clean up test company
+  const updatedCompanies = approvedCompanies.filter(c => c !== testCompany);
+  await saveApprovedCompaniesToStorage(updatedCompanies);
+  console.log('[S4S] Removed test company');
+  
+  console.log('[S4S] Test completed successfully!');
+};
