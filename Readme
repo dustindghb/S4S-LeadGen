@@ -1,173 +1,96 @@
 # S4S LinkedIn Lead Generation Tool
 
-## New Streaming Analysis Feature
+A Chrome extension for extracting and analyzing LinkedIn posts to find hiring opportunities.
 
-This extension now supports **real-time streaming analysis** of LinkedIn posts during scrolling, providing a much more efficient workflow for lead generation.
+## Features
 
-### How It Works
+- **Real-time Lead Analysis**: Automatically analyzes LinkedIn posts for hiring content
+- **AI-Powered Classification**: Uses OpenAI or local Ollama to classify posts as hiring-related
+- **Company Filtering**: 
+  - **Approved Companies**: Special messaging for approved vendors/clients
+  - **Blacklisted Companies**: Automatically filter out leads from specific companies
+- **Date Filtering**: Filter posts by date range
+- **Export Options**: Export leads to CSV or Excel format
+- **Auto-refresh**: Automatically refresh page to get fresh content
 
-1. **Start Scrolling & Analysis**: Click this button to begin scrolling LinkedIn and analyzing posts in real-time
-2. **Real-time Processing**: As LinkedIn loads new posts during scrolling, each post is immediately:
-   - Sent to Ollama to determine if it's a hiring post
-   - If it's a lead, extracts the author's title and company
-   - Adds it to the results immediately
-3. **Live Metrics**: Watch real-time statistics including:
-   - Posts Found: Total number of posts discovered
-   - Posts Analyzed: Number of posts sent to Ollama
-   - Leads Found: Number of hiring posts identified
-   - Analysis Status: Current state (Scrolling & Analyzing, Analyzing Remaining, Complete)
-4. **Continuous Analysis**: After stopping scrolling, analysis continues until all posts are processed
-5. **Stop Scrolling**: Click to stop scrolling but continue analyzing remaining posts
-6. **Download Leads as CSV**: Export all found leads to a CSV file
+## Company Management Features
 
-### Benefits of Streaming Analysis
+### Approved Companies
+Companies that are approved vendors or clients get special messaging in connection requests.
 
-- **Faster Results**: No need to wait for all posts to load before analysis begins
-- **Real-time Feedback**: See leads being found as you scroll with live metrics
-- **Better Performance**: Processes posts as they're discovered rather than in large batches
-- **Continuous Processing**: Analysis continues after scrolling stops until all posts are processed
-- **Immediate CSV Export**: Download results as soon as analysis completes
+### Blacklisted Companies
+The blacklist feature allows you to automatically filter out leads from specific companies. This is useful for:
 
-### Live Metrics Display
+- Avoiding competitors
+- Filtering out spam companies
+- Excluding companies you don't want to work with
 
-The extension now shows live metrics during analysis:
-- **Posts Found**: Total posts discovered on the page
-- **Posts Analyzed**: Posts that have been sent to Ollama for analysis
-- **Leads Found**: Hiring posts that have been identified and enriched with title/company data
+### How to Manage Companies
 
-### Auto-Refresh Feature
+1. Click the settings gear icon (⚙️) in the extension popup
+2. Navigate to either "Approved Vendors & Clients" or "Blacklisted Companies" section
+3. **Manual Entry**: Enter company names exactly as they appear on LinkedIn and click "Add Company"
+4. **Bulk Upload**: Upload an Excel or CSV file with company names in the first column
+5. **Export**: Download your current company lists to Excel files
+6. **Clear All**: Remove all companies from a list (with confirmation)
 
-The extension includes an intelligent auto-refresh feature that automatically refreshes the LinkedIn page after analyzing 50 posts. This is based on the observation that the most relevant hiring posts are typically found in the first 50 posts of a LinkedIn feed.
+### File Upload Requirements
 
-**How it works:**
-1. **Automatic Trigger**: When 15 posts have been analyzed, the extension automatically refreshes the page
-2. **Fresh Content**: After refresh, the extension waits for the page to load and content script to be ready
-3. **Seamless Continuation**: Analysis and scrolling automatically resume with fresh content
-4. **Progress Tracking**: The refresh count is displayed in the metrics (e.g., "R:2" means 2 refreshes have occurred)
+- **Supported Formats**: Excel (.xlsx, .xls) and CSV files
+- **Column Structure**: Company names should be in the first column (A)
+- **Header Row**: The system automatically skips common header names like "Company", "Name", "Organization"
+- **Duplicate Handling**: Duplicate companies are automatically skipped during upload
 
-**Benefits:**
-- **More Efficient**: Focuses on the most relevant posts (first 15) rather than scrolling through stale content
-- **Better Lead Quality**: Fresh content typically contains more recent hiring posts
-- **Time Saving**: Avoids analyzing posts that are less likely to be relevant
-- **Continuous Operation**: No manual intervention required
+### Example Usage
 
-**Configuration:**
-- **Enable/Disable**: Use the "Enable auto-refresh" checkbox in the filters section
-- **Manual Test**: Use the "Test Refresh" button to manually test the refresh functionality
-- **Status Indicator**: The metrics show how many posts remain until the next refresh
+- Add "Competitor Inc" to blacklist to avoid leads from that company
+- Add "Spam Company" to filter out unwanted leads
+- Upload a list of 100 approved vendors from your CRM system
+- Export your current lists for backup or sharing
+- Company names are case-insensitive and trimmed for matching
 
+## Installation
 
+1. Clone this repository
+2. Open Chrome and go to `chrome://extensions/`
+3. Enable "Developer mode"
+4. Click "Load unpacked" and select the extension folder
+5. The extension will appear in your Chrome toolbar
 
-### Auto-Refresh Feature
+## Usage
 
-The extension now includes an intelligent auto-refresh feature that automatically refreshes the LinkedIn page after analyzing 50 posts. This is based on the observation that the most relevant hiring posts are usually found within the first 50 posts of a feed.
+1. Navigate to LinkedIn's home feed
+2. Click the S4S LinkedIn Tool extension icon
+3. Configure your settings (AI provider, filters, etc.)
+4. Click "Start Scrolling & Analysis"
+5. The tool will automatically scroll and analyze posts for hiring content
+6. Export your leads when finished
 
-**How it works:**
-1. **Automatic Trigger**: After analyzing 50 posts, the extension automatically refreshes the page
-2. **State Preservation**: All found leads are saved to storage before the refresh
-3. **Seamless Restart**: Analysis automatically restarts after the page loads
-4. **Refresh Counter**: The analysis status shows how many refreshes have occurred (R:1, R:2, etc.)
-5. **Configurable**: You can disable auto-refresh using the checkbox in the filters section
+## Configuration
 
+### AI Provider
+- **OpenAI**: Cloud-based AI (requires API key)
+- **Ollama**: Local AI (requires Ollama installation)
 
-### Requirements
+### Filters
+- **Date Filter**: Only analyze posts from the last N days
+- **Post Limit**: Stop analysis after N posts
+- **Auto-refresh**: Refresh page after N posts for fresh content
+- **Approved Companies**: Companies that get special messaging
+- **Blacklisted Companies**: Companies to automatically filter out
 
-**For Ollama (Local):**
-- Ollama running locally on port 11435
-- A model like `gemma3:12b` installed in Ollama
+## File Structure
 
-**For OpenAI (Cloud):**
-- OpenAI API key
-- Internet connection
+- `popup.html` - Extension popup interface
+- `popup.js` - Main extension logic
+- `content.js` - Content script for LinkedIn page interaction
+- `background.js` - Background script for API calls
+- `exportExcel.js` - Excel export functionality
+- `manifest.json` - Extension manifest
 
-**General:**
-- LinkedIn page open in a browser tab
+## Development
 
-### Usage
-
-1. Open LinkedIn and navigate to your feed
-2. Click "Start Scrolling & Analysis"
-3. Watch the live metrics as the extension scrolls LinkedIn and analyzes posts in real-time
-4. Click "Stop Scrolling" when you want to stop scrolling (analysis continues)
-5. Wait for analysis to complete (status will show "Complete")
-6. Click "Download Leads as CSV" to export results
-
-The extension automatically saves leads to browser storage, so you can download them later even if you close the popup.
-
-## AI Provider Configuration
-
-You can choose between two AI providers for post analysis:
-
-### Ollama (Local)
-- **Free**: Runs locally on your machine
-- **Privacy**: No data sent to external servers
-- **Setup**: Requires Ollama installation and model download
-- **Speed**: Depends on your local hardware
-
-### OpenAI (Cloud)
-- **Cost**: Pay per API call (very affordable for this use case)
-- **Convenience**: No local setup required
-- **Quality**: Generally better accuracy and consistency
-- **Speed**: Fast cloud-based processing
-
-### How to Configure
-
-1. **Select Provider**: Choose between "Ollama (Local)" or "OpenAI (Cloud)"
-2. **For OpenAI**: Enter your API key and select a model
-3. **Save Configuration**: Click "Save OpenAI Config" to store your settings
-4. **Test Connection**: Use "Test Connection" to verify OpenAI setup
-
-### OpenAI Models Available
-
-- **GPT-4o Mini**: Fast and cost-effective (recommended)
-- **GPT-4o**: Best quality but more expensive
-- **GPT-3.5 Turbo**: Fastest but lower quality
-
-### Security Note
-
-Your OpenAI API key is stored locally in your browser's storage and is only used to make API calls to OpenAI. It is never sent to any other servers or stored elsewhere.
-
-## Custom Hiring Classifier Prompt
-
-You can now customize the AI prompt used to classify hiring posts:
-
-### How to Customize
-
-1. **Edit the Prompt**: The textarea in the popup contains the current prompt used by the AI
-2. **Save Changes**: Click "Save Prompt" to permanently save your custom prompt
-3. **Reset to Default**: Click "Reset to Default" to restore the original prompt
-4. **Visual Feedback**: The save button shows an asterisk (*) when changes are unsaved
-
-### Prompt Placeholders
-
-Use these placeholders in your custom prompt:
-- `{post.content || post.message || ''}` - The post content
-- `{post.headline || ''}` - The author's headline/title
-
-### Example Custom Prompt
-
-```
-SYSTEM: You are a hiring post classifier. Return ONLY "YES" or "NO".
-
-TASK: Determine if this LinkedIn post is from someone actively HIRING others.
-
-RETURN "YES" IF:
-- "We are hiring", "Looking for", "Join our team"
-- "Apply now", "Send your resume"
-- "Open position", "Job opening"
-
-RETURN "NO" IF:
-- "I'm looking for work", "Open to opportunities"
-- "Recently laid off", "Job hunting"
-
-POST CONTENT: {post.content || post.message || ''}
-POST HEADLINE: {post.headline || ''}
-
-RESPONSE: Return ONLY "YES" or "NO"
-```
-
-### Prompt Persistence
-
-- Custom prompts are automatically saved to browser storage
-- Your prompt will be loaded when you reopen the extension
-- Changes are permanent until you reset to default
+The extension uses Chrome's Manifest V3 and requires the following permissions:
+- `scripting` - For content script injection
+- `activeTab` - For accessing the current tab
+- `storage` - For saving settings and data

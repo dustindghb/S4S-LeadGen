@@ -763,13 +763,80 @@ The system will automatically replace these placeholders with actual post data w
                 Add Company
               </button>
             </div>
+            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+              <input
+                type="file"
+                id="modalApprovedCompaniesFile"
+                accept=".xlsx,.xls,.csv"
+                style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;"
+              >
+              <button id="modalUploadApprovedCompanies" class="save-prompt-btn" style="width: auto;">
+                Upload Excel/CSV
+              </button>
+            </div>
             <div class="filter-help">
-              Enter the exact company name as it appears on LinkedIn (e.g., "NetApp", "AWS", "Salesforce")
+              Enter the exact company name as it appears on LinkedIn (e.g., "NetApp", "AWS", "Salesforce") or upload an Excel/CSV file with company names in the first column
             </div>
           </div>
           
           <div id="modalApprovedCompaniesList" style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px; background: #f9f9f9;">
             <div style="text-align: center; color: #666; font-style: italic;">No approved companies added yet</div>
+          </div>
+          <div style="margin-top: 10px; text-align: center;">
+            <button id="modalExportApprovedCompanies" class="reset-btn" style="width: auto; padding: 8px 16px; font-size: 12px; margin-right: 10px;">
+              Export to Excel
+            </button>
+            <button id="modalClearApprovedCompanies" class="stop-btn" style="width: auto; padding: 8px 16px; font-size: 12px;">
+              Clear All
+            </button>
+          </div>
+        </div>
+        
+        <!-- Blacklisted Companies Section -->
+        <div class="settings-section">
+          <h3>Blacklisted Companies</h3>
+          <div class="filter-help" style="margin-bottom: 15px;">
+            Add companies that should be automatically filtered out from lead generation. Leads from these companies will be ignored.
+          </div>
+          
+          <div style="margin-bottom: 15px;">
+            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+              <input
+                type="text"
+                id="modalBlacklistedCompanyName"
+                placeholder="Enter company name"
+                style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;"
+              >
+              <button id="modalAddBlacklistedCompany" class="save-prompt-btn" style="width: auto;">
+                Add Company
+              </button>
+            </div>
+            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+              <input
+                type="file"
+                id="modalBlacklistedCompaniesFile"
+                accept=".xlsx,.xls,.csv"
+                style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;"
+              >
+              <button id="modalUploadBlacklistedCompanies" class="save-prompt-btn" style="width: auto;">
+                Upload Excel/CSV
+              </button>
+            </div>
+            <div class="filter-help">
+              Enter the exact company name as it appears on LinkedIn (e.g., "Competitor Inc", "Spam Company") or upload an Excel/CSV file with company names in the first column
+            </div>
+          </div>
+          
+          <div id="modalBlacklistedCompaniesList" style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px; background: #f9f9f9;">
+            <div style="text-align: center; color: #666; font-style: italic;">No blacklisted companies added yet</div>
+          </div>
+          <div style="margin-top: 10px; text-align: center;">
+            <button id="modalExportBlacklistedCompanies" class="reset-btn" style="width: auto; padding: 8px 16px; font-size: 12px; margin-right: 10px;">
+              Export to Excel
+            </button>
+            <button id="modalClearBlacklistedCompanies" class="stop-btn" style="width: auto; padding: 8px 16px; font-size: 12px;">
+              Clear All
+            </button>
           </div>
         </div>
         
@@ -822,6 +889,7 @@ The system will automatically replace these placeholders with actual post data w
       </div>
     </div>
     
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="exportExcel.js"></script>
     <script src="findLeadsButton.js"></script>
     <script src="downloadCSVButton.js"></script>

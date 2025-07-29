@@ -1231,6 +1231,10 @@ JSON:`;
       const approvedCompanies = await loadApprovedCompaniesFromStorage();
       renderApprovedCompaniesList(approvedCompanies);
 
+      // Load blacklisted companies
+      const blacklistedCompanies = await loadBlacklistedCompaniesFromStorage();
+      renderBlacklistedCompaniesList(blacklistedCompanies);
+
     }
     
     // Function to sync modal settings back to main form and save to storage
@@ -2085,6 +2089,55 @@ JSON:`;
         }
       });
     }
+
+    // Blacklisted Companies Event Listeners
+    const modalAddBlacklistedCompanyBtn = document.getElementById('modalAddBlacklistedCompany');
+    if (modalAddBlacklistedCompanyBtn) {
+      modalAddBlacklistedCompanyBtn.addEventListener('click', addBlacklistedCompany);
+    }
+
+    // Add Enter key support for the blacklisted company name input
+    const modalBlacklistedCompanyNameInput = document.getElementById('modalBlacklistedCompanyName');
+    if (modalBlacklistedCompanyNameInput) {
+      modalBlacklistedCompanyNameInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          addBlacklistedCompany();
+        }
+      });
+    }
+
+    // Excel Upload Event Listeners
+    const modalUploadApprovedCompaniesBtn = document.getElementById('modalUploadApprovedCompanies');
+    if (modalUploadApprovedCompaniesBtn) {
+      modalUploadApprovedCompaniesBtn.addEventListener('click', uploadApprovedCompanies);
+    }
+
+    const modalUploadBlacklistedCompaniesBtn = document.getElementById('modalUploadBlacklistedCompanies');
+    if (modalUploadBlacklistedCompaniesBtn) {
+      modalUploadBlacklistedCompaniesBtn.addEventListener('click', uploadBlacklistedCompanies);
+    }
+
+    // Export Event Listeners
+    const modalExportApprovedCompaniesBtn = document.getElementById('modalExportApprovedCompanies');
+    if (modalExportApprovedCompaniesBtn) {
+      modalExportApprovedCompaniesBtn.addEventListener('click', exportApprovedCompanies);
+    }
+
+    const modalExportBlacklistedCompaniesBtn = document.getElementById('modalExportBlacklistedCompanies');
+    if (modalExportBlacklistedCompaniesBtn) {
+      modalExportBlacklistedCompaniesBtn.addEventListener('click', exportBlacklistedCompanies);
+    }
+
+    // Clear Event Listeners
+    const modalClearApprovedCompaniesBtn = document.getElementById('modalClearApprovedCompanies');
+    if (modalClearApprovedCompaniesBtn) {
+      modalClearApprovedCompaniesBtn.addEventListener('click', clearApprovedCompanies);
+    }
+
+    const modalClearBlacklistedCompaniesBtn = document.getElementById('modalClearBlacklistedCompanies');
+    if (modalClearBlacklistedCompaniesBtn) {
+      modalClearBlacklistedCompaniesBtn.addEventListener('click', clearBlacklistedCompanies);
+    }
   });
 
   // New: Function to analyze a single post in real-time
@@ -2205,6 +2258,14 @@ JSON:`;
           company: titleCompanyData.company,
           position: titleCompanyData.position || 'None found in post'
         };
+        
+        // Check if company is blacklisted
+        const isBlacklisted = await isBlacklistedCompany(titleCompanyData.company);
+        if (isBlacklisted) {
+          console.log(`[S4S] 🚫 BLACKLISTED: Lead from blacklisted company, skipping: ${enrichedPost.name} at ${titleCompanyData.company}`);
+          statusDiv.textContent = `Filtered out blacklisted company: ${titleCompanyData.company}`;
+          return false; // Return false since this lead was filtered out
+        }
         
         // Check if this lead was already added to prevent duplicates
         const leadId = enrichedPost.postUrl || enrichedPost.linkedinUrl || `${enrichedPost.name}-${enrichedPost.content?.substring(0, 50)}`;
@@ -3555,3 +3616,447 @@ Niti`;
     updatePostLimitUI();
     autoRefreshEnabled = settings.autoRefreshEnabled !== false;
   }
+
+  // Function to remove approved company
+  async function removeApprovedCompany(companyName) {
+    const approvedCompanies = await loadApprovedCompaniesFromStorage();
+    const filteredCompanies = approvedCompanies.filter(company => company !== companyName);
+    
+    await saveApprovedCompaniesToStorage(filteredCompanies);
+    renderApprovedCompaniesList(filteredCompanies);
+    
+    console.log('[S4S] Removed approved company:', companyName);
+  }
+
+  // Function to save blacklisted companies to storage
+  async function saveBlacklistedCompaniesToStorage(companies) {
+    try {
+      await chrome.storage.local.set({ blacklistedCompanies: companies });
+      console.log('[S4S] Saved blacklisted companies to storage:', companies);
+    } catch (error) {
+      console.error('[S4S] Error saving blacklisted companies:', error);
+    }
+  }
+
+  // Function to load blacklisted companies from storage
+  async function loadBlacklistedCompaniesFromStorage() {
+    try {
+      const result = await chrome.storage.local.get(['blacklistedCompanies']);
+      return result.blacklistedCompanies || [];
+    } catch (error) {
+      console.error('[S4S] Error loading blacklisted companies:', error);
+      return [];
+    }
+  }
+
+  // Function to check if a company is blacklisted
+  async function isBlacklistedCompany(companyName) {
+    if (!companyName) return false;
+    
+    try {
+      const blacklistedCompanies = await loadBlacklistedCompaniesFromStorage();
+      const isBlacklisted = blacklistedCompanies.some(company => 
+        company.toLowerCase().trim() === companyName.toLowerCase().trim()
+      );
+      
+      if (isBlacklisted) {
+        console.log(`[S4S] 🚫 Company "${companyName}" found in blacklist (${blacklistedCompanies.length} total blacklisted companies)`);
+      }
+      
+      return isBlacklisted;
+    } catch (error) {
+      console.error('[S4S] Error checking blacklisted company:', error);
+      return false;
+    }
+  }
+
+  // Function to render blacklisted companies list
+  function renderBlacklistedCompaniesList(companies) {
+    const listContainer = document.getElementById('modalBlacklistedCompaniesList');
+    if (!listContainer) return;
+
+    if (companies.length === 0) {
+      listContainer.innerHTML = '<div style="text-align: center; color: #666; font-style: italic;">No blacklisted companies added yet</div>';
+      return;
+    }
+
+    const companiesHtml = companies.map(company => `
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; margin: 4px 0; background: white; border-radius: 4px; border: 1px solid #e0e0e0;">
+        <span style="font-size: 12px;">${company}</span>
+        <button 
+          onclick="removeBlacklistedCompany('${company}')" 
+          style="background: #dc3545; color: white; border: none; padding: 4px 8px; border-radius: 3px; font-size: 10px; cursor: pointer;"
+          title="Remove company"
+        >
+          ×
+        </button>
+      </div>
+    `).join('');
+
+    listContainer.innerHTML = companiesHtml;
+  }
+
+  // Function to add blacklisted company
+  async function addBlacklistedCompany() {
+    const input = document.getElementById('modalBlacklistedCompanyName');
+    const companyName = input.value.trim();
+    
+    if (!companyName) {
+      alert('Please enter a company name');
+      return;
+    }
+
+    const blacklistedCompanies = await loadBlacklistedCompaniesFromStorage();
+    
+    // Check if company already exists
+    if (blacklistedCompanies.some(company => company.toLowerCase() === companyName.toLowerCase())) {
+      alert('This company is already in the blacklist');
+      return;
+    }
+
+    // Add company to list
+    blacklistedCompanies.push(companyName);
+    await saveBlacklistedCompaniesToStorage(blacklistedCompanies);
+    
+    // Update UI
+    renderBlacklistedCompaniesList(blacklistedCompanies);
+    input.value = '';
+    
+    console.log('[S4S] Added blacklisted company:', companyName);
+  }
+
+  // Function to remove blacklisted company
+  async function removeBlacklistedCompany(companyName) {
+    const blacklistedCompanies = await loadBlacklistedCompaniesFromStorage();
+    const filteredCompanies = blacklistedCompanies.filter(company => company !== companyName);
+    
+    await saveBlacklistedCompaniesToStorage(filteredCompanies);
+    renderBlacklistedCompaniesList(filteredCompanies);
+    
+    console.log('[S4S] Removed blacklisted company:', companyName);
+  }
+
+  // Make functions globally available for HTML onclick handlers
+  window.addBlacklistedCompany = addBlacklistedCompany;
+  window.removeBlacklistedCompany = removeBlacklistedCompany;
+  window.addApprovedCompany = addApprovedCompany;
+  window.removeApprovedCompany = removeApprovedCompany;
+  window.uploadApprovedCompanies = uploadApprovedCompanies;
+  window.uploadBlacklistedCompanies = uploadBlacklistedCompanies;
+  window.exportApprovedCompanies = exportApprovedCompanies;
+  window.exportBlacklistedCompanies = exportBlacklistedCompanies;
+  window.clearApprovedCompanies = clearApprovedCompanies;
+  window.clearBlacklistedCompanies = clearBlacklistedCompanies;
+
+  // Function to parse Excel/CSV file and extract company names
+  async function parseCompanyFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          
+          // Get the first sheet
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          
+          // Convert to JSON
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          
+          // Extract company names from the first column (skip header if it exists)
+          const companies = [];
+          for (let i = 0; i < jsonData.length; i++) {
+            const row = jsonData[i];
+            if (row && row[0]) {
+              const companyName = row[0].toString().trim();
+              if (companyName && companyName.length > 0) {
+                // Skip common header names
+                const lowerName = companyName.toLowerCase();
+                if (!lowerName.includes('company') && !lowerName.includes('name') && !lowerName.includes('organization')) {
+                  companies.push(companyName);
+                }
+              }
+            }
+          }
+          
+          console.log(`[S4S] Parsed ${companies.length} companies from file:`, companies);
+          resolve(companies);
+        } catch (error) {
+          console.error('[S4S] Error parsing Excel file:', error);
+          reject(error);
+        }
+      };
+      
+      reader.onerror = function(error) {
+        console.error('[S4S] Error reading file:', error);
+        reject(error);
+      };
+      
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  // Function to upload approved companies from Excel/CSV
+  async function uploadApprovedCompanies() {
+    const fileInput = document.getElementById('modalApprovedCompaniesFile');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+      alert('Please select a file first');
+      return;
+    }
+    
+    try {
+      console.log('[S4S] Uploading approved companies from file:', file.name);
+      
+      // Parse the file
+      const companies = await parseCompanyFile(file);
+      
+      if (companies.length === 0) {
+        alert('No companies found in the file. Please ensure the first column contains company names.');
+        return;
+      }
+      
+      // Load existing approved companies
+      const existingCompanies = await loadApprovedCompaniesFromStorage();
+      
+      // Add new companies (avoid duplicates)
+      let addedCount = 0;
+      let duplicateCount = 0;
+      
+      for (const company of companies) {
+        if (!existingCompanies.some(existing => existing.toLowerCase() === company.toLowerCase())) {
+          existingCompanies.push(company);
+          addedCount++;
+        } else {
+          duplicateCount++;
+        }
+      }
+      
+      // Save updated list
+      await saveApprovedCompaniesToStorage(existingCompanies);
+      
+      // Update UI
+      renderApprovedCompaniesList(existingCompanies);
+      
+      // Clear file input
+      fileInput.value = '';
+      
+      // Show results
+      alert(`Upload completed!\n\nAdded: ${addedCount} companies\nDuplicates skipped: ${duplicateCount}\nTotal companies: ${existingCompanies.length}`);
+      
+      console.log(`[S4S] Approved companies upload completed - Added: ${addedCount}, Duplicates: ${duplicateCount}, Total: ${existingCompanies.length}`);
+      
+    } catch (error) {
+      console.error('[S4S] Error uploading approved companies:', error);
+      alert('Error uploading file. Please ensure it\'s a valid Excel or CSV file with company names in the first column.');
+    }
+  }
+
+  // Function to upload blacklisted companies from Excel/CSV
+  async function uploadBlacklistedCompanies() {
+    const fileInput = document.getElementById('modalBlacklistedCompaniesFile');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+      alert('Please select a file first');
+      return;
+    }
+    
+    try {
+      console.log('[S4S] Uploading blacklisted companies from file:', file.name);
+      
+      // Parse the file
+      const companies = await parseCompanyFile(file);
+      
+      if (companies.length === 0) {
+        alert('No companies found in the file. Please ensure the first column contains company names.');
+        return;
+      }
+      
+      // Load existing blacklisted companies
+      const existingCompanies = await loadBlacklistedCompaniesFromStorage();
+      
+      // Add new companies (avoid duplicates)
+      let addedCount = 0;
+      let duplicateCount = 0;
+      
+      for (const company of companies) {
+        if (!existingCompanies.some(existing => existing.toLowerCase() === company.toLowerCase())) {
+          existingCompanies.push(company);
+          addedCount++;
+        } else {
+          duplicateCount++;
+        }
+      }
+      
+      // Save updated list
+      await saveBlacklistedCompaniesToStorage(existingCompanies);
+      
+      // Update UI
+      renderBlacklistedCompaniesList(existingCompanies);
+      
+      // Clear file input
+      fileInput.value = '';
+      
+      // Show results
+      alert(`Upload completed!\n\nAdded: ${addedCount} companies\nDuplicates skipped: ${duplicateCount}\nTotal companies: ${existingCompanies.length}`);
+      
+      console.log(`[S4S] Blacklisted companies upload completed - Added: ${addedCount}, Duplicates: ${duplicateCount}, Total: ${existingCompanies.length}`);
+      
+    } catch (error) {
+      console.error('[S4S] Error uploading blacklisted companies:', error);
+      alert('Error uploading file. Please ensure it\'s a valid Excel or CSV file with company names in the first column.');
+    }
+  }
+
+  // Function to export approved companies to Excel
+  async function exportApprovedCompanies() {
+    try {
+      const companies = await loadApprovedCompaniesFromStorage();
+      
+      if (companies.length === 0) {
+        alert('No approved companies to export');
+        return;
+      }
+      
+      // Create workbook and worksheet
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet([
+        ['Company Name'], // Header
+        ...companies.map(company => [company])
+      ]);
+      
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Approved Companies');
+      
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const filename = `approved_companies_${timestamp}.xlsx`;
+      
+      // Download the file
+      XLSX.writeFile(workbook, filename);
+      
+      console.log(`[S4S] Exported ${companies.length} approved companies to ${filename}`);
+      
+    } catch (error) {
+      console.error('[S4S] Error exporting approved companies:', error);
+      alert('Error exporting approved companies');
+    }
+  }
+
+  // Function to export blacklisted companies to Excel
+  async function exportBlacklistedCompanies() {
+    try {
+      const companies = await loadBlacklistedCompaniesFromStorage();
+      
+      if (companies.length === 0) {
+        alert('No blacklisted companies to export');
+        return;
+      }
+      
+      // Create workbook and worksheet
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet([
+        ['Company Name'], // Header
+        ...companies.map(company => [company])
+      ]);
+      
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Blacklisted Companies');
+      
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const filename = `blacklisted_companies_${timestamp}.xlsx`;
+      
+      // Download the file
+      XLSX.writeFile(workbook, filename);
+      
+      console.log(`[S4S] Exported ${companies.length} blacklisted companies to ${filename}`);
+      
+    } catch (error) {
+      console.error('[S4S] Error exporting blacklisted companies:', error);
+      alert('Error exporting blacklisted companies');
+    }
+  }
+
+  // Function to clear all approved companies
+  async function clearApprovedCompanies() {
+    if (confirm('Are you sure you want to clear all approved companies? This action cannot be undone.')) {
+      await saveApprovedCompaniesToStorage([]);
+      renderApprovedCompaniesList([]);
+      console.log('[S4S] Cleared all approved companies');
+      alert('All approved companies have been cleared');
+    }
+  }
+
+  // Function to clear all blacklisted companies
+  async function clearBlacklistedCompanies() {
+    if (confirm('Are you sure you want to clear all blacklisted companies? This action cannot be undone.')) {
+      await saveBlacklistedCompaniesToStorage([]);
+      renderBlacklistedCompaniesList([]);
+      console.log('[S4S] Cleared all blacklisted companies');
+      alert('All blacklisted companies have been cleared');
+    }
+  }
+
+  // Test function for blacklist functionality
+  window.testBlacklistFunctionality = async function() {
+    console.log('[S4S] Testing blacklist functionality...');
+    
+    // Test adding a company to blacklist
+    const testCompany = 'Test Company Inc';
+    const blacklistedCompanies = await loadBlacklistedCompaniesFromStorage();
+    blacklistedCompanies.push(testCompany);
+    await saveBlacklistedCompaniesToStorage(blacklistedCompanies);
+    console.log(`[S4S] Added "${testCompany}" to blacklist`);
+    
+    // Test checking if company is blacklisted
+    const isBlacklisted = await isBlacklistedCompany(testCompany);
+    console.log(`[S4S] Is "${testCompany}" blacklisted? ${isBlacklisted}`);
+    
+    // Test removing company from blacklist
+    const updatedCompanies = blacklistedCompanies.filter(c => c !== testCompany);
+    await saveBlacklistedCompaniesToStorage(updatedCompanies);
+    console.log(`[S4S] Removed "${testCompany}" from blacklist`);
+    
+    // Test checking again
+    const isStillBlacklisted = await isBlacklistedCompany(testCompany);
+    console.log(`[S4S] Is "${testCompany}" still blacklisted? ${isStillBlacklisted}`);
+    
+    console.log('[S4S] Blacklist functionality test completed successfully!');
+  };
+
+  // Test function for Excel functionality
+  window.testExcelFunctionality = async function() {
+    console.log('[S4S] Testing Excel functionality...');
+    
+    try {
+      // Test creating a sample Excel file
+      const testCompanies = ['Test Company 1', 'Test Company 2', 'Test Company 3'];
+      
+      // Create workbook and worksheet
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet([
+        ['Company Name'], // Header
+        ...testCompanies.map(company => [company])
+      ]);
+      
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Test Companies');
+      
+      // Generate filename
+      const filename = `test_companies_${Date.now()}.xlsx`;
+      
+      // Download the file
+      XLSX.writeFile(workbook, filename);
+      
+      console.log(`[S4S] Created test Excel file: ${filename}`);
+      console.log('[S4S] Excel functionality test completed successfully!');
+      
+    } catch (error) {
+      console.error('[S4S] Error testing Excel functionality:', error);
+    }
+  };
