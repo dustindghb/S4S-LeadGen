@@ -790,6 +790,55 @@ The system will automatically replace these placeholders with actual post data w
             </div>
           </div>
         </div>
+        
+        <!-- Client Lists Section -->
+        <div class="settings-section">
+          <h3>Client Lists Management</h3>
+          <div style="margin-bottom: 15px;">
+            <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">
+              Upload Client Lists Excel File:
+            </label>
+            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+              <input
+                type="file"
+                id="clientListsFile"
+                accept=".xlsx,.xls,.csv"
+                style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;"
+              >
+              <button id="uploadClientLists" class="save-prompt-btn" style="flex-shrink: 0;">
+                Upload
+              </button>
+            </div>
+            <div class="filter-help">
+              Upload an Excel file with two columns: Column A = Current/Past Clients, Column B = Blacklisted Clients. 
+              The tool will use this to customize messages and mark blocked companies.
+            </div>
+          </div>
+          
+          <div id="clientListsStatus" style="display: none; margin-bottom: 15px;">
+            <div style="padding: 10px; border-radius: 4px; font-size: 12px;">
+              <div id="currentClientsCount" style="margin-bottom: 5px;"></div>
+              <div id="blacklistedClientsCount" style="margin-bottom: 5px;"></div>
+              <button id="clearClientLists" class="reset-btn" style="margin-top: 10px;">
+                Clear Client Lists
+              </button>
+            </div>
+          </div>
+          
+          <div style="margin-bottom: 15px;">
+            <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">
+              Sample Excel Format:
+            </label>
+            <div style="background: #f8f9fa; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; border: 1px solid #e9ecef;">
+              Column A (Current/Past Clients) | Column B (Blacklisted Clients)<br>
+              NetApp | Company A<br>
+              AWS | Company B<br>
+              Salesforce | Company C<br>
+              ServiceNow | Company D<br>
+              HPE | Company E
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     

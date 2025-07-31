@@ -1200,6 +1200,10 @@ JSON:`;
         }
       }
       
+      // Load client lists status
+      const clientLists = await loadClientListsFromStorage();
+      updateClientListsUI(clientLists);
+      
       // Load OpenAI config
       const openaiApiKeyInput = document.getElementById('openaiApiKey');
       const modalOpenaiApiKeyInput = document.getElementById('modalOpenaiApiKey');
@@ -1655,6 +1659,29 @@ JSON:`;
       });
     }
 
+    // Client Lists Management Event Listeners
+    const uploadClientListsBtn = document.getElementById('uploadClientLists');
+    const clearClientListsBtn = document.getElementById('clearClientLists');
+
+    if (uploadClientListsBtn) {
+      uploadClientListsBtn.addEventListener('click', handleClientListsUpload);
+    }
+
+    if (clearClientListsBtn) {
+      clearClientListsBtn.addEventListener('click', clearClientLists);
+    }
+
+    // Load and display client lists status on page load
+    (async () => {
+      try {
+        const clientLists = await loadClientListsFromStorage();
+        updateClientListsUI(clientLists);
+        console.log('[S4S] Client lists initialized from storage');
+      } catch (error) {
+        console.error('[S4S] Error initializing client lists:', error);
+      }
+    })();
+
     if (!classifierPromptTextarea || !savePromptBtn || !resetPromptBtn) {
       console.error('[S4S] Prompt editing elements not found');
     } else {
@@ -2044,18 +2071,18 @@ JSON:`;
       
       statusDiv.textContent = `Found ${leadsCount} leads!`;
       resultsDiv.innerHTML = `<div style="background: #e3f2fd; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 12px; color: #1976d2; border-left: 4px solid #2196f3;">Analysis complete! Found ${leadsCount} leads. Use the download buttons to export results.</div>`;
-      exportLeadsToCSV(streamingLeads);
+      await exportLeadsToCSV(streamingLeads);
     });
 
     // Add button to download all analyzed posts for review
-    const downloadAllPostsBtn = window.createDownloadAllPostsButton(controlsDiv, () => {
+    const downloadAllPostsBtn = window.createDownloadAllPostsButton(controlsDiv, async () => {
       if (allAnalyzedPosts.length === 0) {
         statusDiv.textContent = 'Error: No analyzed posts found. Please start scrolling to analyze posts.';
         return;
       }
       
       statusDiv.textContent = `Downloading ${allAnalyzedPosts.length} analyzed posts for review...`;
-      exportAllPostsToCSV();
+      await exportAllPostsToCSV();
       statusDiv.textContent = `Downloaded ${allAnalyzedPosts.length} analyzed posts for review.`;
     });
   });
@@ -2660,7 +2687,7 @@ JSON:`;
   }
 
   // New: Function to generate personalized connection messages
-  function generateConnectionMessage(name, connectionDegree, title) {
+  async function generateConnectionMessage(name, connectionDegree, title, company) {
     // Check if this is a company account
     const isCompanyAccount = title && (title.toLowerCase().includes('company account') || title.toLowerCase().includes('business account'));
     
@@ -2668,6 +2695,48 @@ JSON:`;
     let firstName = 'there';
     if (!isCompanyAccount && name) {
       firstName = name.split(' ')[0];
+    }
+    
+    // Check if company is in client lists
+    const isCurrentClientFlag = await isCurrentClient(company);
+    const isBlacklistedFlag = await isBlacklistedClient(company);
+    
+    // If blacklisted, return a blocked message
+    if (isBlacklistedFlag) {
+      return `BLOCKED - Company is blacklisted`;
+    }
+    
+    // If current/past client, use the special message format
+    if (isCurrentClientFlag) {
+      return `Hi ${firstName},
+
+Thank you for accepting my connection request.
+
+I wanted to take a moment to introduce myself and my company, Stage 4 Solutions, an interim staffing company ranked on the Inc. 5000 list five times for consistent growth. We previously supported "${company}" as an approved vendor.
+
+For the last 23 years, we have filled gaps across marketing, IT, and operations teams – nationwide. We are in the top 9% of staffing firms nationally!
+
+I noticed on LinkedIn that you are hiring for your team. We have quickly filled gaps at our clients such as NetApp, AWS, Salesforce, ServiceNow, and HPE. Here's what our clients say about us: https://www.stage4solutions.com/clientsuccess/testimonials/
+
+We specialize in providing timely, cost-effective, and well-qualified professionals for contract (full or part-time) and contract to perm roles.
+
+I would love to support you in filling any gaps in your team with well-qualified contractors.
+
+What is a good time to talk over the next couple of weeks? Please let me know and I will send you a meeting invite.
+
+Looking forward to our conversation,
+
+Niti
+
+*******************************
+
+Niti Agrawal
+CEO
+Stage 4 Solutions, Inc.
+Consulting & Interim Staffing
+niti@stage4solutions.com
+408-887-1033 (cell)
+www.stage4solutions.com/`;
     }
     
     // Clean up connection degree
@@ -3122,7 +3191,7 @@ Niti`;
   }
 
   // Function to export leads to CSV
-  function exportLeadsToCSV(leads) {
+  async function exportLeadsToCSV(leads) {
     if (!leads || !leads.length) {
       alert('No leads to export!');
       return;
@@ -3153,7 +3222,7 @@ Niti`;
       'post_date',
       'post_content'
     ];
-    const header = ['Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Connection Note', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
+    const header = ['Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Connection Note', 'Blocked Status', 'Post URL', 'Profile URL', 'Post Date', 'Post Content'];
     function escapeCSVField(field) {
       if (field === null || field === undefined) return '';
       const str = String(field);
@@ -3171,19 +3240,28 @@ Niti`;
       }
       return cleanedStr;
     }
-    // Map each lead to the correct keys, with fallback for profileurl, post_content, and posturl
-    const rows = filteredLeads.map(lead => [
-      escapeCSVField(lead.name || ''),
-      escapeCSVField(lead.title || 'Unknown Title'),
-      escapeCSVField(lead.company || 'Unknown Company'),
-      escapeCSVField(lead.position || 'None found in post'),
-      escapeCSVField(lead.connection_degree || lead.connectionDegree || '3rd'),
-      escapeCSVField(generateConnectionMessage(lead.name, lead.connection_degree || lead.connectionDegree, lead.title)),
-      escapeCSVField(lead.posturl || lead.postUrl || ''),
-      escapeCSVField(lead.profileurl || lead.linkedin_profile_url || lead.linkedinUrl || ''),
-      escapeCSVField(lead.post_date || lead.postDate || ''),
-      escapeCSVField(lead.post_content || lead.content || '')
-    ]);
+    
+    // Process leads asynchronously
+    const rows = [];
+    for (const lead of filteredLeads) {
+      const connectionMessage = await generateConnectionMessage(lead.name, lead.connection_degree || lead.connectionDegree, lead.title, lead.company);
+      const isBlacklisted = await isBlacklistedClient(lead.company);
+      const blockedStatus = isBlacklisted ? 'BLOCKED' : '';
+      
+      rows.push([
+        escapeCSVField(lead.name || ''),
+        escapeCSVField(lead.title || 'Unknown Title'),
+        escapeCSVField(lead.company || 'Unknown Company'),
+        escapeCSVField(lead.position || 'None found in post'),
+        escapeCSVField(lead.connection_degree || lead.connectionDegree || '3rd'),
+        escapeCSVField(connectionMessage),
+        escapeCSVField(blockedStatus),
+        escapeCSVField(lead.posturl || lead.postUrl || ''),
+        escapeCSVField(lead.profileurl || lead.linkedin_profile_url || lead.linkedinUrl || ''),
+        escapeCSVField(lead.post_date || lead.postDate || ''),
+        escapeCSVField(lead.post_content || lead.content || '')
+      ]);
+    }
     
     // Add summary row with total posts found metric
     const summaryRow = [
@@ -3193,6 +3271,7 @@ Niti`;
       '', // Position
       '', // Connection Degree
       '', // Connection Note
+      '', // Blocked Status
       '', // Post URL
       '', // Profile URL
       '', // Post Date
@@ -3213,7 +3292,7 @@ Niti`;
   }
 
   // Function to export all analyzed posts to CSV for review
-  function exportAllPostsToCSV() {
+  async function exportAllPostsToCSV() {
     if (!allAnalyzedPosts || !allAnalyzedPosts.length) {
       alert('No analyzed posts to export!');
       return;
@@ -3241,6 +3320,7 @@ Niti`;
       'Position Hiring For',
       'Connection Degree', 
       'Connection Note', 
+      'Blocked Status',
       'Post URL', 
       'Profile URL', 
       'Post Date', 
@@ -3267,23 +3347,31 @@ Niti`;
       return cleanedStr;
     }
     
-    // Map each analyzed post to CSV row
-    const rows = filteredPosts.map(post => [
-      escapeCSVField(post.name || ''),
-      escapeCSVField(post.headline || ''),
-      escapeCSVField(post.isHiring ? 'YES' : 'NO'),
-      escapeCSVField(post.title || ''),
-      escapeCSVField(post.company || ''),
-      escapeCSVField(post.position || 'None found in post'),
-      escapeCSVField(post.connection_degree || post.connectionDegree || '3rd'),
-      escapeCSVField(generateConnectionMessage(post.name, post.connection_degree || post.connectionDegree, post.title)),
-      escapeCSVField(post.posturl || post.postUrl || ''),
-      escapeCSVField(post.profileurl || post.linkedin_profile_url || post.linkedinUrl || ''),
-      escapeCSVField(post.post_date || post.postDate || ''),
-      escapeCSVField(post.post_content || post.content || ''),
-      escapeCSVField(post.analysisError || ''),
-      escapeCSVField(post.analyzedAt || '')
-    ]);
+    // Process posts asynchronously
+    const rows = [];
+    for (const post of filteredPosts) {
+      const connectionMessage = await generateConnectionMessage(post.name, post.connection_degree || post.connectionDegree, post.title, post.company);
+      const isBlacklisted = await isBlacklistedClient(post.company);
+      const blockedStatus = isBlacklisted ? 'BLOCKED' : '';
+      
+      rows.push([
+        escapeCSVField(post.name || ''),
+        escapeCSVField(post.headline || ''),
+        escapeCSVField(post.isHiring ? 'YES' : 'NO'),
+        escapeCSVField(post.title || ''),
+        escapeCSVField(post.company || ''),
+        escapeCSVField(post.position || 'None found in post'),
+        escapeCSVField(post.connection_degree || post.connectionDegree || '3rd'),
+        escapeCSVField(connectionMessage),
+        escapeCSVField(blockedStatus),
+        escapeCSVField(post.posturl || post.postUrl || ''),
+        escapeCSVField(post.profileurl || post.linkedin_profile_url || post.linkedinUrl || ''),
+        escapeCSVField(post.post_date || post.postDate || ''),
+        escapeCSVField(post.post_content || post.content || ''),
+        escapeCSVField(post.analysisError || ''),
+        escapeCSVField(post.analyzedAt || '')
+      ]);
+    }
     
     // Add summary row with total posts found metric
     const summaryRow = [
@@ -3295,6 +3383,7 @@ Niti`;
       '', // Position
       '', // Connection Degree
       '', // Connection Note
+      '', // Blocked Status
       '', // Post URL
       '', // Profile URL
       '', // Post Date
@@ -3375,4 +3464,176 @@ Niti`;
     updateDateFilterUI();
     updatePostLimitUI();
     autoRefreshEnabled = settings.autoRefreshEnabled !== false;
+  }
+
+  // Client Lists Management Functions
+  async function saveClientListsToStorage(clientLists) {
+    try {
+      await chrome.storage.local.set({ clientLists: clientLists });
+      console.log('[S4S] Client lists saved to storage:', clientLists);
+      return true;
+    } catch (error) {
+      console.error('[S4S] Error saving client lists to storage:', error);
+      return false;
+    }
+  }
+
+  async function loadClientListsFromStorage() {
+    try {
+      const result = await chrome.storage.local.get(['clientLists']);
+      const clientLists = result.clientLists || {
+        currentClients: [],
+        blacklistedClients: []
+      };
+      console.log('[S4S] Client lists loaded from storage:', clientLists);
+      return clientLists;
+    } catch (error) {
+      console.error('[S4S] Error loading client lists from storage:', error);
+      return {
+        currentClients: [],
+        blacklistedClients: []
+      };
+    }
+  }
+
+  function updateClientListsUI(clientLists) {
+    const statusDiv = document.getElementById('clientListsStatus');
+    const currentClientsCount = document.getElementById('currentClientsCount');
+    const blacklistedClientsCount = document.getElementById('blacklistedClientsCount');
+
+    if (clientLists.currentClients.length > 0 || clientLists.blacklistedClients.length > 0) {
+      statusDiv.style.display = 'block';
+      statusDiv.style.background = '#d4edda';
+      statusDiv.style.border = '1px solid #c3e6cb';
+      statusDiv.style.color = '#155724';
+      
+      currentClientsCount.innerHTML = `<strong>Current/Past Clients:</strong> ${clientLists.currentClients.length} companies loaded`;
+      blacklistedClientsCount.innerHTML = `<strong>Blacklisted Clients:</strong> ${clientLists.blacklistedClients.length} companies loaded`;
+    } else {
+      statusDiv.style.display = 'none';
+    }
+  }
+
+  async function parseCSVFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = function(e) {
+        try {
+          const csv = e.target.result;
+          const lines = csv.split('\n');
+          const currentClients = [];
+          const blacklistedClients = [];
+          
+          // Skip header row if it exists
+          const startRow = lines[0] && (lines[0].includes('Current/Past Clients') || lines[0].includes('Column A')) ? 1 : 0;
+          
+          for (let i = startRow; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (line) {
+              const columns = line.split(',').map(col => col.trim().replace(/^["']|["']$/g, ''));
+              if (columns.length >= 2) {
+                const currentClient = columns[0];
+                const blacklistedClient = columns[1];
+                
+                if (currentClient && currentClient !== '') {
+                  currentClients.push(currentClient);
+                }
+                if (blacklistedClient && blacklistedClient !== '') {
+                  blacklistedClients.push(blacklistedClient);
+                }
+              }
+            }
+          }
+          
+          resolve({
+            currentClients: currentClients,
+            blacklistedClients: blacklistedClients
+          });
+        } catch (error) {
+          reject(new Error('Failed to parse CSV file: ' + error.message));
+        }
+      };
+      
+      reader.onerror = function() {
+        reject(new Error('Failed to read file'));
+      };
+      
+      reader.readAsText(file);
+    });
+  }
+
+  async function handleClientListsUpload() {
+    const fileInput = document.getElementById('clientListsFile');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+      alert('Please select a file to upload.');
+      return;
+    }
+    
+    try {
+      let clientLists;
+      
+      if (file.name.toLowerCase().endsWith('.csv')) {
+        clientLists = await parseCSVFile(file);
+      } else {
+        // For Excel files, we'll need to add XLSX library support later
+        alert('Currently only CSV files are supported. Please convert your Excel file to CSV format.');
+        return;
+      }
+      
+      await saveClientListsToStorage(clientLists);
+      updateClientListsUI(clientLists);
+      
+      alert(`Successfully uploaded client lists!\nCurrent/Past Clients: ${clientLists.currentClients.length}\nBlacklisted Clients: ${clientLists.blacklistedClients.length}`);
+      
+      // Clear the file input
+      fileInput.value = '';
+      
+    } catch (error) {
+      console.error('[S4S] Error uploading client lists:', error);
+      alert('Error uploading file: ' + error.message);
+    }
+  }
+
+  async function clearClientLists() {
+    try {
+      await saveClientListsToStorage({ currentClients: [], blacklistedClients: [] });
+      updateClientListsUI({ currentClients: [], blacklistedClients: [] });
+      alert('Client lists cleared successfully.');
+    } catch (error) {
+      console.error('[S4S] Error clearing client lists:', error);
+      alert('Error clearing client lists: ' + error.message);
+    }
+  }
+
+  // Function to check if a company is in the current/past clients list
+  async function isCurrentClient(companyName) {
+    try {
+      const clientLists = await loadClientListsFromStorage();
+      return clientLists.currentClients.some(client => 
+        companyName && client && 
+        companyName.toLowerCase().includes(client.toLowerCase()) || 
+        client.toLowerCase().includes(companyName.toLowerCase())
+      );
+    } catch (error) {
+      console.error('[S4S] Error checking current client:', error);
+      return false;
+    }
+  }
+
+  // Function to check if a company is in the blacklisted clients list
+  async function isBlacklistedClient(companyName) {
+    try {
+      const clientLists = await loadClientListsFromStorage();
+      return clientLists.blacklistedClients.some(client => 
+        companyName && client && 
+        companyName.toLowerCase().includes(client.toLowerCase()) || 
+        client.toLowerCase().includes(companyName.toLowerCase())
+      );
+    } catch (error) {
+      console.error('[S4S] Error checking blacklisted client:', error);
+      return false;
+    }
   }

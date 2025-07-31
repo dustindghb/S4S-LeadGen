@@ -1,5 +1,5 @@
 // Export leads to CSV (opens in Excel)
-window.exportLeadsToCSV = function(leads) {
+window.exportLeadsToCSV = async function(leads) {
   if (!leads || !Array.isArray(leads) || leads.length === 0) {
     alert('No leads to export!');
     return;
@@ -19,43 +19,132 @@ window.exportLeadsToCSV = function(leads) {
     
     return str;
   }
-  
-  // Create CSV content
-  const headers = ['Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Connection Note', 'Post URL', 'LinkedIn Profile URL', 'Post Date', 'Post Content'];
-  const csvRows = [];
-  
-  // Add headers
-  csvRows.push(headers.map(escapeCSVField).join(','));
-  
-  // Add data rows
-  leads.forEach(lead => {
-    // Generate connection message
-    const isCompanyAccount = lead.title && (lead.title.toLowerCase().includes('company account') || lead.title.toLowerCase().includes('business account'));
+
+  // Helper function to check if company is in client lists
+  async function isCurrentClient(companyName) {
+    try {
+      const result = await chrome.storage.local.get(['clientLists']);
+      const clientLists = result.clientLists || { currentClients: [], blacklistedClients: [] };
+      return clientLists.currentClients.some(client => 
+        companyName && client && 
+        companyName.toLowerCase().includes(client.toLowerCase()) || 
+        client.toLowerCase().includes(companyName.toLowerCase())
+      );
+    } catch (error) {
+      console.error('[S4S] Error checking current client:', error);
+      return false;
+    }
+  }
+
+  async function isBlacklistedClient(companyName) {
+    try {
+      const result = await chrome.storage.local.get(['clientLists']);
+      const clientLists = result.clientLists || { currentClients: [], blacklistedClients: [] };
+      return clientLists.blacklistedClients.some(client => 
+        companyName && client && 
+        companyName.toLowerCase().includes(client.toLowerCase()) || 
+        client.toLowerCase().includes(companyName.toLowerCase())
+      );
+    } catch (error) {
+      console.error('[S4S] Error checking blacklisted client:', error);
+      return false;
+    }
+  }
+
+  // Helper function to generate connection message
+  async function generateConnectionMessage(name, connectionDegree, title, company) {
+    // Check if this is a company account
+    const isCompanyAccount = title && (title.toLowerCase().includes('company account') || title.toLowerCase().includes('business account'));
     
+    // Extract first name from full name (only if not a company account)
     let firstName = 'there';
-    if (!isCompanyAccount && lead.name) {
-      firstName = lead.name.split(' ')[0];
+    if (!isCompanyAccount && name) {
+      firstName = name.split(' ')[0];
     }
     
-    const connectionDegree = lead.connectionDegree || '3rd';
-    const cleanConnectionDegree = connectionDegree.toLowerCase().replace(/\s+/g, '');
+    // Check if company is in client lists
+    const isCurrentClientFlag = await isCurrentClient(company);
+    const isBlacklistedFlag = await isBlacklistedClient(company);
     
-    let connectionMessage;
+    // If blacklisted, return a blocked message
+    if (isBlacklistedFlag) {
+      return `BLOCKED - Company is blacklisted`;
+    }
+    
+    // If current/past client, use the special message format
+    if (isCurrentClientFlag) {
+      return `Hi ${firstName},
+
+Thank you for accepting my connection request.
+
+I wanted to take a moment to introduce myself and my company, Stage 4 Solutions, an interim staffing company ranked on the Inc. 5000 list five times for consistent growth. We previously supported "${company}" as an approved vendor.
+
+For the last 23 years, we have filled gaps across marketing, IT, and operations teams – nationwide. We are in the top 9% of staffing firms nationally!
+
+I noticed on LinkedIn that you are hiring for your team. We have quickly filled gaps at our clients such as NetApp, AWS, Salesforce, ServiceNow, and HPE. Here's what our clients say about us: https://www.stage4solutions.com/clientsuccess/testimonials/
+
+We specialize in providing timely, cost-effective, and well-qualified professionals for contract (full or part-time) and contract to perm roles.
+
+I would love to support you in filling any gaps in your team with well-qualified contractors.
+
+What is a good time to talk over the next couple of weeks? Please let me know and I will send you a meeting invite.
+
+Looking forward to our conversation,
+
+Niti
+
+*******************************
+
+Niti Agrawal
+CEO
+Stage 4 Solutions, Inc.
+Consulting & Interim Staffing
+niti@stage4solutions.com
+408-887-1033 (cell)
+www.stage4solutions.com/`;
+    }
+    
+    // Clean up connection degree
+    const cleanConnectionDegree = connectionDegree ? connectionDegree.toLowerCase().replace(/\s+/g, '') : '3rd';
+    
     if (cleanConnectionDegree.includes('2nd') || cleanConnectionDegree.includes('second')) {
-      connectionMessage = `Hi ${firstName},
+      return `Hi ${firstName},
 
 I am the CEO of Stage 4 Solutions, a consulting and interim staffing company ranked on Inc.5000 list five times. We share many connections on LinkedIn. I noticed your company is growing and thought it would be great to connect.
 
 Thanks!
 Niti`;
     } else {
-      connectionMessage = `Hi ${firstName},
+      // Default for 3rd connections and any other degree
+      return `Hi ${firstName},
 
 I am the CEO of Stage 4 Solutions, a consulting and interim staffing company ranked on Inc.5000 list five times. I noticed your company is growing and thought it would be great to connect.
 
 Thanks!
 Niti`;
     }
+  }
+  
+  // Create CSV content
+  const headers = ['Name', 'Title', 'Company', 'Position Hiring For', 'Connection Degree', 'Connection Note', 'Blocked Status', 'Post URL', 'LinkedIn Profile URL', 'Post Date', 'Post Content'];
+  const csvRows = [];
+  
+  // Add headers
+  csvRows.push(headers.map(escapeCSVField).join(','));
+  
+  // Add data rows
+  for (const lead of leads) {
+    // Generate connection message
+    const connectionMessage = await generateConnectionMessage(
+      lead.name, 
+      lead.connectionDegree || '3rd', 
+      lead.title, 
+      lead.company
+    );
+    
+    // Determine blocked status
+    const isBlacklisted = await isBlacklistedClient(lead.company);
+    const blockedStatus = isBlacklisted ? 'BLOCKED' : '';
     
     const row = [
       lead.name || '',
@@ -64,13 +153,14 @@ Niti`;
       lead.position || 'None found in post',
       lead.connectionDegree || '3rd',
       connectionMessage,
+      blockedStatus,
       lead.postUrl || lead.post_url || '',
       lead.linkedinUrl || lead.linkedin_profile_url || '',
       lead.postDate || lead.post_date || '',
       lead.content || lead.post_content || lead.message || ''
     ];
     csvRows.push(row.map(escapeCSVField).join(','));
-  });
+  }
   
   const csvContent = csvRows.join('\n');
   
