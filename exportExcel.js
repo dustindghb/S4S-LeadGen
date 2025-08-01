@@ -36,17 +36,17 @@ window.exportLeadsToCSV = async function(leads) {
     }
   }
 
-  async function isBlacklistedClient(companyName) {
+  async function isExcludedClient(companyName) {
     try {
       const result = await chrome.storage.local.get(['clientLists']);
-      const clientLists = result.clientLists || { currentClients: [], blacklistedClients: [] };
-      return clientLists.blacklistedClients.some(client => 
+      const clientLists = result.clientLists || { currentClients: [], excludedClients: [] };
+      return clientLists.excludedClients.some(client => 
         companyName && client && 
         companyName.toLowerCase().includes(client.toLowerCase()) || 
         client.toLowerCase().includes(companyName.toLowerCase())
       );
     } catch (error) {
-      console.error('[S4S] Error checking blacklisted client:', error);
+      console.error('[S4S] Error checking excluded client:', error);
       return false;
     }
   }
@@ -64,11 +64,11 @@ window.exportLeadsToCSV = async function(leads) {
     
     // Check if company is in client lists
     const isCurrentClientFlag = await isCurrentClient(company);
-    const isBlacklistedFlag = await isBlacklistedClient(company);
+    const isExcludedFlag = await isExcludedClient(company);
     
-    // If blacklisted, return a blocked message
-    if (isBlacklistedFlag) {
-      return `BLOCKED - Company is blacklisted`;
+    // If excluded, return a blocked message
+    if (isExcludedFlag) {
+      return `BLOCKED - Company is excluded`;
     }
     
     // If current/past client, use the special message format
@@ -143,8 +143,8 @@ Niti`;
     );
     
     // Determine blocked status
-    const isBlacklisted = await isBlacklistedClient(lead.company);
-    const blockedStatus = isBlacklisted ? 'BLOCKED' : '';
+            const isExcluded = await isExcludedClient(lead.company);
+        const blockedStatus = isExcluded ? 'BLOCKED' : '';
     
     const row = [
       lead.name || '',

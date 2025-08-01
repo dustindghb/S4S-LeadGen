@@ -99,6 +99,101 @@
           #bd2130 100%
         ) !important;
       }
+      
+      .info-icon {
+        color: #667eea;
+        cursor: pointer;
+        font-weight: bold;
+        font-size: 14px;
+        margin-left: 5px;
+        transition: all 0.3s ease;
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        line-height: 16px;
+        text-align: center;
+        border-radius: 50%;
+        background: #f8f9fa;
+        border: 1px solid #667eea;
+      }
+      
+      .info-icon:hover {
+        color: #764ba2;
+        background: #e9ecef;
+        transform: scale(1.1);
+      }
+      
+      .help-dialog {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        border: 2px solid #667eea;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        z-index: 1000;
+        max-width: 400px;
+        min-width: 300px;
+        display: none;
+      }
+      
+      .help-dialog h4 {
+        margin: 0 0 15px 0;
+        color: #667eea;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      
+      .help-dialog p {
+        margin: 0 0 10px 0;
+        font-size: 13px;
+        line-height: 1.5;
+        color: #333;
+      }
+      
+      .help-dialog .close-btn {
+        position: absolute;
+        top: 10px;
+        right: 15px;
+        background: none;
+        border: none;
+        font-size: 18px;
+        color: #999;
+        cursor: pointer;
+        padding: 0;
+        width: auto;
+        margin: 0;
+      }
+      
+      .help-dialog .close-btn:hover {
+        color: #667eea;
+        transform: none;
+        box-shadow: none;
+      }
+      
+      .dialog-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 999;
+        display: none;
+      }
+      
+      .filter-help {
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 6px;
+        padding: 10px;
+        margin-top: 8px;
+        font-size: 12px;
+        color: #6c757d;
+        line-height: 1.4;
+      }
       .stop-btn:disabled {
         background: #6c757d !important;
         cursor: not-allowed;
@@ -429,25 +524,23 @@
       <div class="filters-content" id="filtersContent" style="display: none;">
         <div class="filters-grid">
           <div class="filter-group">
-            <label>Filter Posts by Date:</label>
-            <div class="filter-input-group">
-              <input
-                type="number"
-                id="dateFilterDays"
-                placeholder=""
-                min="1"
-                max="365"
-              >
-              <span>days ago</span>
-              <button id="clearDateFilter" class="reset-btn">Clear</button>
-            </div>
-            <div class="filter-help">
-              Leave empty to include all posts. Enter a number to only include posts from the last N days.
-            </div>
+                        <label>Filter Posts by Date: <span class="info-icon" data-help="dateFilter" title="Click for help">i</span></label>
+              <div class="filter-input-group">
+                <input
+                  type="number"
+                  id="dateFilterDays"
+                  placeholder=""
+                  min="1"
+                  max="365"
+                >
+                <span>days ago</span>
+                <button id="clearDateFilter" class="reset-btn">Clear</button>
+              </div>
+
           </div>
           
           <div class="filter-group">
-            <label>Stop Analysis After:</label>
+            <label>Stop Analysis After: <span class="info-icon" data-help="stopAnalysis" title="Click for help">i</span></label>
             <div class="filter-input-group">
               <input
                 type="number"
@@ -459,13 +552,22 @@
               <span>posts</span>
               <button id="clearPostLimit" class="reset-btn">Clear</button>
             </div>
-            <div class="filter-help">
-              Leave empty to analyze all posts. Enter a number to stop analysis after N posts have been analyzed.
+            <div class="filter-input-group" style="margin-top: 8px;">
+              <input
+                type="number"
+                id="leadLimit"
+                placeholder=""
+                min="1"
+                max="1000"
+              >
+              <span>leads</span>
+              <button id="clearLeadLimit" class="reset-btn">Clear</button>
             </div>
+
           </div>
           
           <div class="filter-group">
-            <label>Auto-Refresh Settings:</label>
+            <label>Auto-Refresh Settings: <span class="info-icon" data-help="autoRefresh" title="Click for help">i</span></label>
             <div class="filter-input-group">
               <input
                 type="checkbox"
@@ -487,9 +589,7 @@
                 title="Number of posts to analyze before refreshing the page"
               >
             </div>
-            <div class="filter-help">
-              Automatically refresh the page after analyzing the specified number of posts to get fresh content. This is more efficient as most hiring posts are in the first 50 posts.
-            </div>
+
           </div>
         </div>
       </div>
@@ -679,7 +779,7 @@ The system will automatically replace these placeholders with actual post data w
           <h3>Filters & Limits</h3>
           <div class="filters-grid">
             <div class="filter-group">
-              <label>Filter Posts by Date:</label>
+              <label>Filter Posts by Date: <span class="info-icon" data-help="dateFilter" title="Click for help">i</span></label>
               <div class="filter-input-group">
                 <input
                   type="number"
@@ -691,13 +791,11 @@ The system will automatically replace these placeholders with actual post data w
                 <span>days ago</span>
                 <button id="modalClearDateFilter" class="reset-btn">Clear</button>
               </div>
-              <div class="filter-help">
-                Leave empty to include all posts. Enter a number to only include posts from the last N days.
-              </div>
+
             </div>
             
             <div class="filter-group">
-              <label>Stop Analysis After:</label>
+              <label>Stop Analysis After: <span class="info-icon" data-help="stopAnalysis" title="Click for help">i</span></label>
               <div class="filter-input-group">
                 <input
                   type="number"
@@ -709,13 +807,22 @@ The system will automatically replace these placeholders with actual post data w
                 <span>posts</span>
                 <button id="modalClearPostLimit" class="reset-btn">Clear</button>
               </div>
-              <div class="filter-help">
-                Leave empty to analyze all posts. Enter a number to stop analysis after N posts have been analyzed.
+              <div class="filter-input-group" style="margin-top: 8px;">
+                <input
+                  type="number"
+                  id="modalLeadLimit"
+                  placeholder=""
+                  min="1"
+                  max="1000"
+                >
+                <span>leads</span>
+                <button id="modalClearLeadLimit" class="reset-btn">Clear</button>
               </div>
+
             </div>
             
             <div class="filter-group">
-              <label>Auto-Refresh Settings:</label>
+              <label>Auto-Refresh Settings: <span class="info-icon" data-help="autoRefresh" title="Click for help">i</span></label>
               <div class="filter-input-group">
                 <input
                   type="checkbox"
@@ -737,9 +844,7 @@ The system will automatically replace these placeholders with actual post data w
                   title="Number of posts to analyze before refreshing the page"
                 >
               </div>
-              <div class="filter-help">
-                Automatically refresh the page after analyzing the specified number of posts to get fresh content.
-              </div>
+
             </div>
           </div>
         </div>
@@ -796,7 +901,7 @@ The system will automatically replace these placeholders with actual post data w
           <h3>Client Lists Management</h3>
           <div style="margin-bottom: 15px;">
             <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">
-              Upload Client Lists Excel File:
+              Upload Client Lists File (CSV or Excel): <span class="info-icon" data-help="clientLists" title="Click for help">i</span>
             </label>
             <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
               <input
@@ -809,42 +914,56 @@ The system will automatically replace these placeholders with actual post data w
                 Upload
               </button>
             </div>
-            <div class="filter-help">
-              Upload an Excel file with two columns: Column A = Current/Past Clients, Column B = Blacklisted Clients. 
-              The tool will use this to customize messages and mark blocked companies.
-            </div>
+
           </div>
           
-          <div id="clientListsStatus" style="display: none; margin-bottom: 15px;">
-            <div style="padding: 10px; border-radius: 4px; font-size: 12px;">
-              <div id="currentClientsCount" style="margin-bottom: 5px;"></div>
-              <div id="blacklistedClientsCount" style="margin-bottom: 5px;"></div>
-              <button id="clearClientLists" class="reset-btn" style="margin-top: 10px;">
+          <!-- Display uploaded client lists -->
+          <div id="clientListsDisplay" style="margin-top: 15px; display: none;">
+            <h4 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">Uploaded Client Lists</h4>
+            
+            <div style="display: flex; gap: 15px;">
+              <!-- Current/Past Clients -->
+              <div style="flex: 1; background: #e8f5e8; padding: 10px; border-radius: 6px; border: 1px solid #c3e6c3;">
+                <h5 style="margin: 0 0 8px 0; color: #2d5a2d; font-size: 13px;">Current/Past Clients (<span id="currentClientsCount">0</span>)</h5>
+                <div id="currentClientsList" style="font-size: 11px; color: #2d5a2d; max-height: 150px; overflow-y: auto; line-height: 1.4;">
+                  <em>No clients uploaded yet</em>
+                </div>
+              </div>
+              
+              <!-- Excluded Clients -->
+              <div style="flex: 1; background: #ffe8e8; padding: 10px; border-radius: 6px; border: 1px solid #e6c3c3;">
+                <h5 style="margin: 0 0 8px 0; color: #5a2d2d; font-size: 13px;">Excluded Clients (<span id="excludedClientsCount">0</span>)</h5>
+                <div id="excludedClientsList" style="font-size: 11px; color: #5a2d2d; max-height: 150px; overflow-y: auto; line-height: 1.4;">
+                  <em>No clients uploaded yet</em>
+                </div>
+              </div>
+            </div>
+            
+            <div style="margin-top: 10px; font-size: 11px; color: #666;">
+              <strong>Note:</strong> These lists will be used to customize messages and mark blocked companies during lead generation.
+            </div>
+            
+            <div style="margin-top: 15px; text-align: center;">
+              <button id="clearClientLists" class="reset-btn" style="width: auto; padding: 8px 16px;">
                 Clear Client Lists
               </button>
-            </div>
-          </div>
-          
-          <div style="margin-bottom: 15px;">
-            <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">
-              Sample Excel Format:
-            </label>
-            <div style="background: #f8f9fa; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; border: 1px solid #e9ecef;">
-              Column A (Current/Past Clients) | Column B (Blacklisted Clients)<br>
-              NetApp | Company A<br>
-              AWS | Company B<br>
-              Salesforce | Company C<br>
-              ServiceNow | Company D<br>
-              HPE | Company E
             </div>
           </div>
         </div>
       </div>
     </div>
     
+    <!-- Help Dialog -->
+    <div class="dialog-overlay" id="dialogOverlay"></div>
+    <div class="help-dialog" id="helpDialog">
+      <button class="close-btn" id="closeHelpBtn">&times;</button>
+      <h4 id="helpDialogTitle"></h4>
+      <div id="helpDialogContent"></div>
+    </div>
     <script src="exportExcel.js"></script>
     <script src="findLeadsButton.js"></script>
     <script src="downloadCSVButton.js"></script>
+    <script src="xlsx.full.min.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

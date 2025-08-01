@@ -20,5 +20,11 @@
         "matches": ["https://www.linkedin.com/*"],
         "js": ["content.js"]
       }
+    ],
+    "web_accessible_resources": [
+      {
+        "resources": ["xlsx.full.min.js"],
+        "matches": ["<all_urls>"]
+      }
     ]
   }

@@ -1052,6 +1052,8 @@ JSON:`;
   let metricsUpdateInterval = null; // New: interval for frequent metrics updates
   let postLimit = 0; // New: limit for number of posts to analyze
   let postLimitReached = false; // New: flag to track if manual post limit has been reached
+  let leadLimit = 0; // New: limit for number of leads to find
+  let leadLimitReached = false; // New: flag to track if manual lead limit has been reached
   let autoRefreshEnabled = true; // New: enable auto-refresh after 50 posts
   let refreshCount = 0; // New: track number of refreshes performed
   let autoRefreshTriggered = false; // New: flag to track if auto-refresh has been triggered
@@ -1160,6 +1162,20 @@ JSON:`;
       }
     })();
     
+    // Load and display client lists from storage on page load
+    (async () => {
+      try {
+        const clientLists = await loadClientListsFromStorage();
+        if (clientLists.currentClients.length > 0 || clientLists.blacklistedClients.length > 0) {
+          updateClientListsUI(clientLists);
+          displayClientLists(clientLists);
+          console.log('[S4S] Client lists loaded from storage');
+        }
+      } catch (error) {
+        console.error('[S4S] Error loading client lists:', error);
+      }
+    })();
+    
     // Function to load current settings into modal
     async function loadSettingsToModal() {
       // Load filter settings from storage
@@ -1167,6 +1183,7 @@ JSON:`;
       
       const modalDateFilterInput = document.getElementById('modalDateFilterDays');
       const modalPostLimitInput = document.getElementById('modalPostLimit');
+      const modalLeadLimitInput = document.getElementById('modalLeadLimit');
       const modalAutoRefreshCheckbox = document.getElementById('modalAutoRefreshEnabled');
       const modalAutoRefreshPostsInput = document.getElementById('modalAutoRefreshPosts');
       
@@ -1176,6 +1193,10 @@ JSON:`;
       
       if (modalPostLimitInput) {
         modalPostLimitInput.value = filterSettings.postLimit || '';
+      }
+      
+      if (modalLeadLimitInput) {
+        modalLeadLimitInput.value = filterSettings.leadLimit || '';
       }
       
       if (modalAutoRefreshCheckbox) {
@@ -1231,6 +1252,7 @@ JSON:`;
       // Get modal values
       const modalDateFilterInput = document.getElementById('modalDateFilterDays');
       const modalPostLimitInput = document.getElementById('modalPostLimit');
+      const modalLeadLimitInput = document.getElementById('modalLeadLimit');
       const modalAutoRefreshCheckbox = document.getElementById('modalAutoRefreshEnabled');
       const modalAutoRefreshPostsInput = document.getElementById('modalAutoRefreshPosts');
       
@@ -1238,6 +1260,7 @@ JSON:`;
       const filterSettings = {
         dateFilterDays: modalDateFilterInput ? modalDateFilterInput.value : '',
         postLimit: modalPostLimitInput ? modalPostLimitInput.value : '',
+        leadLimit: modalLeadLimitInput ? modalLeadLimitInput.value : '',
         autoRefreshEnabled: modalAutoRefreshCheckbox ? modalAutoRefreshCheckbox.checked : true,
         autoRefreshPosts: modalAutoRefreshPostsInput ? parseInt(modalAutoRefreshPostsInput.value) || 15 : 15
       };
@@ -1617,9 +1640,26 @@ JSON:`;
       });
     }
     
+    // Modal clear lead limit button
+    const modalClearLeadLimitBtn = document.getElementById('modalClearLeadLimit');
+    if (modalClearLeadLimitBtn) {
+      modalClearLeadLimitBtn.addEventListener('click', async () => {
+        const modalLeadLimitInput = document.getElementById('modalLeadLimit');
+        if (modalLeadLimitInput) {
+          modalLeadLimitInput.value = '';
+          // Save to storage and sync to main form
+          const filterSettings = await loadFilterSettingsFromStorage();
+          filterSettings.leadLimit = '';
+          await saveFilterSettingsToStorage(filterSettings);
+          applyFilterSettingsToDOM(filterSettings);
+        }
+      });
+    }
+    
     // Add real-time save event listeners to modal inputs
     const modalDateFilterInput = document.getElementById('modalDateFilterDays');
     const modalPostLimitInput = document.getElementById('modalPostLimit');
+    const modalLeadLimitInput = document.getElementById('modalLeadLimit');
     const modalAutoRefreshCheckbox = document.getElementById('modalAutoRefreshEnabled');
     const modalAutoRefreshPostsInput = document.getElementById('modalAutoRefreshPosts');
     
@@ -1636,6 +1676,15 @@ JSON:`;
       modalPostLimitInput.addEventListener('input', async () => {
         const filterSettings = await loadFilterSettingsFromStorage();
         filterSettings.postLimit = modalPostLimitInput.value;
+        await saveFilterSettingsToStorage(filterSettings);
+        applyFilterSettingsToDOM(filterSettings);
+      });
+    }
+    
+    if (modalLeadLimitInput) {
+      modalLeadLimitInput.addEventListener('input', async () => {
+        const filterSettings = await loadFilterSettingsFromStorage();
+        filterSettings.leadLimit = modalLeadLimitInput.value;
         await saveFilterSettingsToStorage(filterSettings);
         applyFilterSettingsToDOM(filterSettings);
       });
@@ -1850,6 +1899,40 @@ JSON:`;
     // Initialize the post limit UI
     updatePostLimitUI();
     
+    // Initialize lead limit functionality
+    const leadLimitInput = document.getElementById('leadLimit');
+    const clearLeadLimitBtn = document.getElementById('clearLeadLimit');
+    
+    if (clearLeadLimitBtn) {
+      clearLeadLimitBtn.addEventListener('click', async () => {
+        if (leadLimitInput) {
+          leadLimitInput.value = '';
+          leadLimit = 0;
+          leadLimitReached = false;
+          statusDiv.textContent = 'Lead limit cleared. Analysis will continue until manually stopped.';
+          updateLeadLimitUI();
+          // Save to storage
+          const filterSettings = await loadFilterSettingsFromStorage();
+          filterSettings.leadLimit = '';
+          await saveFilterSettingsToStorage(filterSettings);
+        }
+      });
+    }
+
+    // Add event listener for lead limit input changes
+    if (leadLimitInput) {
+      leadLimitInput.addEventListener('input', async () => {
+        updateLeadLimitUI();
+        // Save to storage
+        const filterSettings = await loadFilterSettingsFromStorage();
+        filterSettings.leadLimit = leadLimitInput.value;
+        await saveFilterSettingsToStorage(filterSettings);
+      });
+    }
+
+    // Initialize the lead limit UI
+    updateLeadLimitUI();
+    
     // Set up auto-refresh checkbox
     const autoRefreshCheckbox = document.getElementById('autoRefreshEnabled');
     if (autoRefreshCheckbox) {
@@ -1909,6 +1992,39 @@ JSON:`;
       // Start collapsed by default
       filtersToggle.classList.remove('expanded');
       filtersContent.classList.remove('expanded');
+    }
+
+    // Initialize help dialog functionality
+    const infoIcons = document.querySelectorAll('.info-icon');
+    const closeHelpBtn = document.getElementById('closeHelpBtn');
+    const dialogOverlay = document.getElementById('dialogOverlay');
+    
+    // Add click listeners to all info icons
+    infoIcons.forEach(icon => {
+      icon.addEventListener('click', (e) => {
+        e.preventDefault();
+        const helpType = icon.getAttribute('data-help');
+        if (helpType) {
+          console.log('Info icon clicked for:', helpType);
+          toggleHelp(helpType);
+        }
+      });
+    });
+    
+    // Add click listener to close button
+    if (closeHelpBtn) {
+      closeHelpBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        closeHelpDialog();
+      });
+    }
+    
+    // Add click listener to overlay
+    if (dialogOverlay) {
+      dialogOverlay.addEventListener('click', (e) => {
+        e.preventDefault();
+        closeHelpDialog();
+      });
     }
 
     // Restore Start/Stop Scrolling button functionality
@@ -2226,6 +2342,30 @@ JSON:`;
         };
         streamingLeads.push(enrichedPostWithOrder);
         
+        // Check if lead limit has been reached
+        if (leadLimit > 0 && streamingLeads.length >= leadLimit && !leadLimitReached) {
+          leadLimitReached = true;
+          console.log(`[S4S] Manual lead limit reached: ${streamingLeads.length}/${leadLimit} leads found`);
+          statusDiv.textContent = `Lead limit reached! Found ${streamingLeads.length} leads. Stopping analysis and scrolling.`;
+          
+          // Stop scrolling first
+          try {
+            const tab = await getMostRecentLinkedInTab();
+            if (tab) {
+              await sendMessage(tab.id, { action: "stopScroll" }, 5000);
+            }
+          } catch (error) {
+            console.error('[S4S] Error stopping scroll:', error);
+          }
+          
+          // Stop the streaming analysis
+          stopStreamingAnalysis();
+          
+          // Handle completion
+          handleAnalysisComplete(statusDiv, resultsDiv);
+          return true;
+        }
+        
         // Update status and metrics immediately
         const positionText = titleCompanyData.position ? ` (${titleCompanyData.position})` : ' (No specific position found)';
         
@@ -2370,8 +2510,10 @@ JSON:`;
     
     // Update date filter UI after reset
     updateDateFilterUI();
-    updatePostLimitUI(); // Update post limit UI after reset
-    postLimitReached = false; // Reset post limit reached flag
+            updatePostLimitUI(); // Update post limit UI after reset
+        postLimitReached = false; // Reset post limit reached flag
+        updateLeadLimitUI(); // Update lead limit UI after reset
+        leadLimitReached = false; // Reset lead limit reached flag
     autoRefreshTriggered = false; // Reset auto-refresh flag
     metricsUpdateInterval = null; // Reset metrics interval
     
@@ -2572,6 +2714,7 @@ JSON:`;
       
       // Reset analysis state for fresh start (but preserve leads)
       postLimitReached = false;
+      leadLimitReached = false;
       autoRefreshTriggered = false; // Reset auto-refresh flag so it can trigger again
       analyzedPostCounter = 0;
       processedPostCount = 0;
@@ -2629,6 +2772,71 @@ JSON:`;
       console.error('[S4S] Error during refresh and restart:', error);
       statusDiv.textContent = 'Error during page refresh. Please try again.';
       ensureButtonStates();
+    }
+  }
+
+  // Help Dialog Functions
+  function showHelpDialog(title, content) {
+    console.log('showHelpDialog called with:', title);
+    const titleElement = document.getElementById('helpDialogTitle');
+    const contentElement = document.getElementById('helpDialogContent');
+    const dialogElement = document.getElementById('helpDialog');
+    const overlayElement = document.getElementById('dialogOverlay');
+    
+    if (titleElement && contentElement && dialogElement && overlayElement) {
+      titleElement.textContent = title;
+      contentElement.innerHTML = content;
+      dialogElement.style.display = 'block';
+      overlayElement.style.display = 'block';
+      console.log('Dialog should now be visible');
+    } else {
+      console.error('Dialog elements not found:', {
+        titleElement: !!titleElement,
+        contentElement: !!contentElement,
+        dialogElement: !!dialogElement,
+        overlayElement: !!overlayElement
+      });
+    }
+  }
+  
+  function closeHelpDialog() {
+    console.log('closeHelpDialog called');
+    const dialogElement = document.getElementById('helpDialog');
+    const overlayElement = document.getElementById('dialogOverlay');
+    
+    if (dialogElement && overlayElement) {
+      dialogElement.style.display = 'none';
+      overlayElement.style.display = 'none';
+    }
+  }
+  
+  function toggleHelp(helpType) {
+    console.log('toggleHelp called with:', helpType);
+    
+    const helpData = {
+      'dateFilter': {
+        title: 'Date Filter',
+        content: '<p>Leave empty to include all posts. Enter a number to only include posts from the last N days.</p><p>This is useful for focusing on recent hiring activity and avoiding outdated posts.</p>'
+      },
+      'stopAnalysis': {
+        title: 'Stop Analysis Limits',
+        content: '<p><strong>Post Limit:</strong> Leave empty to analyze all posts. Enter a number to stop analysis after N posts have been analyzed.</p><p><strong>Lead Limit:</strong> Leave empty for no limit. Enter a number to stop analysis after N leads have been found.</p><p>These limits help you control the analysis scope and find your target number of leads efficiently.</p>'
+      },
+      'autoRefresh': {
+        title: 'Auto-Refresh Settings',
+        content: '<p>Automatically refresh the page after analyzing the specified number of posts to get fresh content.</p><p>LinkedIn\'s algorithm shows the most relevant posts at the top of your feed, so refreshing ensures you\'re always analyzing the highest-quality, most recent content.</p><p>This dramatically improves efficiency by allowing you to find more leads while analyzing fewer total posts.</p>'
+      },
+      'clientLists': {
+        title: 'Client Lists Management',
+        content: '<p>Upload a CSV or Excel file structured with Column A for Current/Past Clients and Column C for Excluded Clients.</p><p>The tool will use this to customize messages and mark blocked companies during lead generation.</p><p>This helps you avoid contacting companies you\'ve already worked with or want to avoid.</p>'
+      }
+    };
+    
+    if (helpData[helpType]) {
+      console.log('Found help data for:', helpType);
+      showHelpDialog(helpData[helpType].title, helpData[helpType].content);
+    } else {
+      console.error('No help data found for:', helpType);
     }
   }
 
@@ -2699,12 +2907,12 @@ JSON:`;
     
     // Check if company is in client lists
     const isCurrentClientFlag = await isCurrentClient(company);
-    const isBlacklistedFlag = await isBlacklistedClient(company);
-    
-    // If blacklisted, return a blocked message
-    if (isBlacklistedFlag) {
-      return `BLOCKED - Company is blacklisted`;
-    }
+            const isExcludedFlag = await isExcludedClient(company);
+        
+        // If excluded, return a blocked message
+        if (isExcludedFlag) {
+          return `BLOCKED - Company is excluded`;
+        }
     
     // If current/past client, use the special message format
     if (isCurrentClientFlag) {
@@ -3190,6 +3398,45 @@ Niti`;
     postLimitReached = false;
   }
 
+  // Function to update lead limit UI (global scope)
+  function updateLeadLimitUI() {
+    const leadLimitInput = document.getElementById('leadLimit');
+    const clearLeadLimitBtn = document.getElementById('clearLeadLimit');
+    const statusDiv = document.getElementById('status');
+    
+    if (!leadLimitInput) return;
+    
+    const limit = parseInt(leadLimitInput.value) || 0;
+    leadLimit = limit; // Update the global variable
+    
+    if (limit > 0) {
+      leadLimitInput.style.borderColor = '#ff6b6b';
+      leadLimitInput.style.backgroundColor = '#fff5f5';
+      if (clearLeadLimitBtn) {
+        clearLeadLimitBtn.style.display = 'inline-block';
+      }
+      
+      // Show preview of lead limit
+      if (statusDiv) {
+        statusDiv.textContent = `Lead limit set to ${limit} leads. Analysis will stop after ${limit} leads have been found.`;
+      }
+    } else {
+      leadLimitInput.style.borderColor = '#ddd';
+      leadLimitInput.style.backgroundColor = 'white';
+      if (clearLeadLimitBtn) {
+        clearLeadLimitBtn.style.display = 'none';
+      }
+      
+      // Clear status if no limit
+      if (statusDiv) {
+        statusDiv.textContent = `No lead limit set. Analysis will continue until manually stopped.`;
+      }
+    }
+    
+    // Reset the lead limit reached flag when limit changes
+    leadLimitReached = false;
+  }
+
   // Function to export leads to CSV
   async function exportLeadsToCSV(leads) {
     if (!leads || !leads.length) {
@@ -3245,8 +3492,8 @@ Niti`;
     const rows = [];
     for (const lead of filteredLeads) {
       const connectionMessage = await generateConnectionMessage(lead.name, lead.connection_degree || lead.connectionDegree, lead.title, lead.company);
-      const isBlacklisted = await isBlacklistedClient(lead.company);
-      const blockedStatus = isBlacklisted ? 'BLOCKED' : '';
+              const isExcluded = await isExcludedClient(lead.company);
+        const blockedStatus = isExcluded ? 'BLOCKED' : '';
       
       rows.push([
         escapeCSVField(lead.name || ''),
@@ -3351,8 +3598,8 @@ Niti`;
     const rows = [];
     for (const post of filteredPosts) {
       const connectionMessage = await generateConnectionMessage(post.name, post.connection_degree || post.connectionDegree, post.title, post.company);
-      const isBlacklisted = await isBlacklistedClient(post.company);
-      const blockedStatus = isBlacklisted ? 'BLOCKED' : '';
+              const isExcluded = await isExcludedClient(post.company);
+        const blockedStatus = isExcluded ? 'BLOCKED' : '';
       
       rows.push([
         escapeCSVField(post.name || ''),
@@ -3424,6 +3671,7 @@ Niti`;
       const settings = result.filterSettings || {
         dateFilterDays: '',
         postLimit: '',
+        leadLimit: '',
         autoRefreshEnabled: true,
         autoRefreshPosts: 15
       };
@@ -3434,6 +3682,7 @@ Niti`;
       return {
         dateFilterDays: '',
         postLimit: '',
+        leadLimit: '',
         autoRefreshEnabled: true,
         autoRefreshPosts: 15
       };
@@ -3446,6 +3695,8 @@ Niti`;
     const modalDateFilterInput = document.getElementById('modalDateFilterDays');
     const postLimitInput = document.getElementById('postLimit');
     const modalPostLimitInput = document.getElementById('modalPostLimit');
+    const leadLimitInput = document.getElementById('leadLimit');
+    const modalLeadLimitInput = document.getElementById('modalLeadLimit');
     const autoRefreshCheckbox = document.getElementById('autoRefreshEnabled');
     const modalAutoRefreshCheckbox = document.getElementById('modalAutoRefreshEnabled');
     const autoRefreshPostsInput = document.getElementById('autoRefreshPosts');
@@ -3455,6 +3706,8 @@ Niti`;
     if (modalDateFilterInput) modalDateFilterInput.value = settings.dateFilterDays || '';
     if (postLimitInput) postLimitInput.value = settings.postLimit || '';
     if (modalPostLimitInput) modalPostLimitInput.value = settings.postLimit || '';
+    if (leadLimitInput) leadLimitInput.value = settings.leadLimit || '';
+    if (modalLeadLimitInput) modalLeadLimitInput.value = settings.leadLimit || '';
     if (autoRefreshCheckbox) autoRefreshCheckbox.checked = settings.autoRefreshEnabled !== false;
     if (modalAutoRefreshCheckbox) modalAutoRefreshCheckbox.checked = settings.autoRefreshEnabled !== false;
     if (autoRefreshPostsInput) autoRefreshPostsInput.value = settings.autoRefreshPosts || 15;
@@ -3463,6 +3716,7 @@ Niti`;
     // Update UI
     updateDateFilterUI();
     updatePostLimitUI();
+    updateLeadLimitUI();
     autoRefreshEnabled = settings.autoRefreshEnabled !== false;
   }
 
@@ -3481,37 +3735,116 @@ Niti`;
   async function loadClientListsFromStorage() {
     try {
       const result = await chrome.storage.local.get(['clientLists']);
-      const clientLists = result.clientLists || {
-        currentClients: [],
-        blacklistedClients: []
-      };
+          const clientLists = result.clientLists || {
+      currentClients: [],
+      excludedClients: []
+    };
       console.log('[S4S] Client lists loaded from storage:', clientLists);
       return clientLists;
     } catch (error) {
       console.error('[S4S] Error loading client lists from storage:', error);
       return {
         currentClients: [],
-        blacklistedClients: []
+        excludedClients: []
       };
     }
   }
 
   function updateClientListsUI(clientLists) {
-    const statusDiv = document.getElementById('clientListsStatus');
-    const currentClientsCount = document.getElementById('currentClientsCount');
-    const blacklistedClientsCount = document.getElementById('blacklistedClientsCount');
+    // Now just call displayClientLists since we've moved the clear button there
+    displayClientLists(clientLists);
+  }
 
-    if (clientLists.currentClients.length > 0 || clientLists.blacklistedClients.length > 0) {
-      statusDiv.style.display = 'block';
-      statusDiv.style.background = '#d4edda';
-      statusDiv.style.border = '1px solid #c3e6cb';
-      statusDiv.style.color = '#155724';
-      
-      currentClientsCount.innerHTML = `<strong>Current/Past Clients:</strong> ${clientLists.currentClients.length} companies loaded`;
-      blacklistedClientsCount.innerHTML = `<strong>Blacklisted Clients:</strong> ${clientLists.blacklistedClients.length} companies loaded`;
-    } else {
-      statusDiv.style.display = 'none';
+  function displayClientLists(clientLists) {
+    const displayDiv = document.getElementById('clientListsDisplay');
+    const currentClientsList = document.getElementById('currentClientsList');
+    const excludedClientsList = document.getElementById('excludedClientsList');
+    const currentClientsCount = document.getElementById('currentClientsCount');
+    const excludedClientsCount = document.getElementById('excludedClientsCount');
+    
+    if (!displayDiv || !currentClientsList || !excludedClientsList) {
+      console.error('[S4S] Client lists display elements not found');
+      return;
     }
+    
+    // Show/hide the display section based on whether there are any clients
+    if (clientLists.currentClients.length > 0 || clientLists.excludedClients.length > 0) {
+      displayDiv.style.display = 'block';
+    } else {
+      displayDiv.style.display = 'none';
+      return;
+    }
+    
+    // Update counts
+    if (currentClientsCount) {
+      currentClientsCount.textContent = clientLists.currentClients.length;
+    }
+    if (excludedClientsCount) {
+      excludedClientsCount.textContent = clientLists.excludedClients.length;
+    }
+    
+    // Display current/past clients
+    if (clientLists.currentClients.length > 0) {
+      const currentClientsHtml = clientLists.currentClients
+        .map(client => `<div style="padding: 2px 0;">- ${client}</div>`)
+        .join('');
+      currentClientsList.innerHTML = currentClientsHtml;
+    } else {
+      currentClientsList.innerHTML = '<em>No current/past clients found</em>';
+    }
+    
+    // Display excluded clients
+    if (clientLists.excludedClients.length > 0) {
+      const excludedClientsHtml = clientLists.excludedClients
+        .map(client => `<div style="padding: 2px 0;">- ${client}</div>`)
+        .join('');
+      excludedClientsList.innerHTML = excludedClientsHtml;
+    } else {
+      excludedClientsList.innerHTML = '<em>No excluded clients found</em>';
+    }
+    
+    console.log('[S4S] Client lists displayed:', {
+      currentClients: clientLists.currentClients.length,
+      excludedClients: clientLists.excludedClients.length
+    });
+  }
+
+  // Function to parse CSV line properly, handling quotes and escaping
+  function parseCSVLine(line) {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    let i = 0;
+    
+    while (i < line.length) {
+      const char = line[i];
+      
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          // Escaped quote
+          current += '"';
+          i += 2;
+        } else {
+          // Toggle quote state
+          inQuotes = !inQuotes;
+          i++;
+        }
+      } else if (char === ',' && !inQuotes) {
+        // End of field
+        result.push(current.trim());
+        current = '';
+        i++;
+      } else {
+        // Regular character
+        current += char;
+        i++;
+      }
+    }
+    
+    // Add the last field
+    result.push(current.trim());
+    
+    return result;
   }
 
   async function parseCSVFile(file) {
@@ -3523,32 +3856,40 @@ Niti`;
           const csv = e.target.result;
           const lines = csv.split('\n');
           const currentClients = [];
-          const blacklistedClients = [];
+          const excludedClients = [];
           
-          // Skip header row if it exists
-          const startRow = lines[0] && (lines[0].includes('Current/Past Clients') || lines[0].includes('Column A')) ? 1 : 0;
+          // Always skip the first row (header row)
+          const startRow = 1;
           
           for (let i = startRow; i < lines.length; i++) {
             const line = lines[i].trim();
             if (line) {
-              const columns = line.split(',').map(col => col.trim().replace(/^["']|["']$/g, ''));
-              if (columns.length >= 2) {
-                const currentClient = columns[0];
-                const blacklistedClient = columns[1];
+              // Better CSV parsing that handles quotes properly
+              const columns = parseCSVLine(line);
+              
+              // Process each row regardless of column count, but ensure we have at least 1 column
+              if (columns.length >= 1) {
+                const currentClient = (columns[0] || '').trim();
+                const excludedClient = columns.length >= 3 ? (columns[2] || '').trim() : '';
                 
+                // Add current client if it exists
                 if (currentClient && currentClient !== '') {
                   currentClients.push(currentClient);
                 }
-                if (blacklistedClient && blacklistedClient !== '') {
-                  blacklistedClients.push(blacklistedClient);
+                
+                // Add excluded client if it exists
+                if (excludedClient && excludedClient !== '') {
+                  excludedClients.push(excludedClient);
                 }
               }
             }
           }
           
+          console.log('[S4S] Parsed clients - Current:', currentClients.length, 'Excluded:', excludedClients.length);
+          
           resolve({
             currentClients: currentClients,
-            blacklistedClients: blacklistedClients
+            excludedClients: excludedClients
           });
         } catch (error) {
           reject(new Error('Failed to parse CSV file: ' + error.message));
@@ -3559,7 +3900,90 @@ Niti`;
         reject(new Error('Failed to read file'));
       };
       
-      reader.readAsText(file);
+      reader.readAsText(file, 'UTF-8');
+    });
+  }
+
+  async function parseExcelFile(file) {
+    return new Promise((resolve, reject) => {
+      console.log('[S4S] Starting Excel file parsing...');
+      console.log('[S4S] XLSX library available:', typeof XLSX !== 'undefined');
+      console.log('[S4S] XLSX object:', XLSX);
+      
+      // Check if XLSX library is available
+      if (typeof XLSX === 'undefined') {
+        console.error('[S4S] XLSX library not loaded');
+        reject(new Error('XLSX library not loaded. Please refresh the page and try again.'));
+        return;
+      }
+      
+      const reader = new FileReader();
+      
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          
+          // Get the first worksheet
+          if (workbook.SheetNames.length === 0) {
+            reject(new Error('No worksheets found in the Excel file'));
+            return;
+          }
+          
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          
+          if (!worksheet) {
+            reject(new Error('Could not read the first worksheet'));
+            return;
+          }
+          
+          // Convert to JSON
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          
+          console.log('[S4S] Excel file parsed, rows found:', jsonData.length);
+          console.log('[S4S] First few rows:', jsonData.slice(0, 3));
+          
+          const currentClients = [];
+          const excludedClients = [];
+          
+          // Always skip the first row (header row)
+          const startRow = 1;
+          
+          for (let i = startRow; i < jsonData.length; i++) {
+            const row = jsonData[i];
+            
+            // Process each row regardless of column count, but ensure we have at least 1 column
+            if (row && row.length >= 1) {
+              const currentClient = row[0] ? row[0].toString().trim() : '';
+              const excludedClient = row.length >= 3 ? (row[2] ? row[2].toString().trim() : '') : '';
+              
+              // Add current client if it exists
+              if (currentClient && currentClient !== '') {
+                currentClients.push(currentClient);
+              }
+              
+              // Add excluded client if it exists
+              if (excludedClient && excludedClient !== '') {
+                excludedClients.push(excludedClient);
+              }
+            }
+          }
+          
+          resolve({
+            currentClients: currentClients,
+            excludedClients: excludedClients
+          });
+        } catch (error) {
+          reject(new Error('Failed to parse Excel file: ' + error.message));
+        }
+      };
+      
+      reader.onerror = function() {
+        reject(new Error('Failed to read file'));
+      };
+      
+      reader.readAsArrayBuffer(file);
     });
   }
 
@@ -3577,16 +4001,28 @@ Niti`;
       
       if (file.name.toLowerCase().endsWith('.csv')) {
         clientLists = await parseCSVFile(file);
+      } else if (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
+        try {
+          clientLists = await parseExcelFile(file);
+        } catch (error) {
+          console.error('[S4S] Excel parsing error:', error);
+          if (error.message.includes('XLSX library not loaded')) {
+            alert('Excel library failed to load. Please try converting your Excel file to CSV format and upload it as a CSV file instead.\n\nTo convert Excel to CSV:\n1. Open the Excel file\n2. Go to File > Save As\n3. Choose CSV format\n4. Save and upload the CSV file');
+          } else {
+            alert('Error parsing Excel file: ' + error.message + '\n\nPlease ensure the file has the correct format with three columns: Column A for Current/Past Clients and Column C for Excluded Clients.');
+          }
+          return;
+        }
       } else {
-        // For Excel files, we'll need to add XLSX library support later
-        alert('Currently only CSV files are supported. Please convert your Excel file to CSV format.');
+        alert('Please select a CSV or Excel file (.csv, .xlsx, .xls).');
         return;
       }
       
       await saveClientListsToStorage(clientLists);
       updateClientListsUI(clientLists);
+      displayClientLists(clientLists);
       
-      alert(`Successfully uploaded client lists!\nCurrent/Past Clients: ${clientLists.currentClients.length}\nBlacklisted Clients: ${clientLists.blacklistedClients.length}`);
+      alert(`Successfully uploaded client lists!\nCurrent/Past Clients: ${clientLists.currentClients.length}\nExcluded Clients: ${clientLists.excludedClients.length}`);
       
       // Clear the file input
       fileInput.value = '';
@@ -3599,8 +4035,15 @@ Niti`;
 
   async function clearClientLists() {
     try {
-      await saveClientListsToStorage({ currentClients: [], blacklistedClients: [] });
-      updateClientListsUI({ currentClients: [], blacklistedClients: [] });
+      await saveClientListsToStorage({ currentClients: [], excludedClients: [] });
+      updateClientListsUI({ currentClients: [], excludedClients: [] });
+      
+      // Hide the display section
+      const displayDiv = document.getElementById('clientListsDisplay');
+      if (displayDiv) {
+        displayDiv.style.display = 'none';
+      }
+      
       alert('Client lists cleared successfully.');
     } catch (error) {
       console.error('[S4S] Error clearing client lists:', error);
@@ -3623,17 +4066,17 @@ Niti`;
     }
   }
 
-  // Function to check if a company is in the blacklisted clients list
-  async function isBlacklistedClient(companyName) {
+  // Function to check if a company is in the excluded clients list
+  async function isExcludedClient(companyName) {
     try {
       const clientLists = await loadClientListsFromStorage();
-      return clientLists.blacklistedClients.some(client => 
+      return clientLists.excludedClients.some(client => 
         companyName && client && 
         companyName.toLowerCase().includes(client.toLowerCase()) || 
         client.toLowerCase().includes(companyName.toLowerCase())
       );
     } catch (error) {
-      console.error('[S4S] Error checking blacklisted client:', error);
+      console.error('[S4S] Error checking excluded client:', error);
       return false;
     }
   }

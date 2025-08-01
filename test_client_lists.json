@@ -1,0 +1,188 @@
+{
+  "test_posts": [
+    {
+      "name": "John Smith",
+      "title": "Senior Marketing Manager",
+      "company": "Cisco",
+      "connection_degree": "2nd",
+      "post_url": "https://linkedin.com/posts/test1",
+      "linkedin_profile_url": "https://linkedin.com/in/johnsmith",
+      "post_date": "2024-01-15",
+      "exact_date": true,
+      "post_content": "We're hiring! Looking for a Marketing Specialist to join our team. Great opportunity to work with cutting-edge technology."
+    },
+    {
+      "name": "Sarah Johnson",
+      "title": "HR Director",
+      "company": "AWS",
+      "connection_degree": "3rd",
+      "post_url": "https://linkedin.com/posts/test2",
+      "linkedin_profile_url": "https://linkedin.com/in/sarahjohnson",
+      "post_date": "2024-01-16",
+      "exact_date": true,
+      "post_content": "Excited to announce we're expanding our team! Looking for talented professionals to join AWS. Apply now!"
+    },
+    {
+      "name": "Mike Davis",
+      "title": "Talent Acquisition",
+      "company": "Broadcom",
+      "connection_degree": "2nd",
+      "post_url": "https://linkedin.com/posts/test3",
+      "linkedin_profile_url": "https://linkedin.com/in/mikedavis",
+      "post_date": "2024-01-17",
+      "exact_date": true,
+      "post_content": "Broadcom is hiring! Multiple positions available across different departments. Great benefits and culture."
+    },
+    {
+      "name": "Lisa Wilson",
+      "title": "Recruiting Manager",
+      "company": "Bristol Myers Squibb",
+      "connection_degree": "3rd",
+      "post_url": "https://linkedin.com/posts/test4",
+      "linkedin_profile_url": "https://linkedin.com/in/lisawilson",
+      "post_date": "2024-01-18",
+      "exact_date": true,
+      "post_content": "We have several open positions at Bristol Myers Squibb. Looking for experienced professionals to join our growing team."
+    },
+    {
+      "name": "David Brown",
+      "title": "HR Specialist",
+      "company": "Lockheed Martin",
+      "connection_degree": "2nd",
+      "post_url": "https://linkedin.com/posts/test5",
+      "linkedin_profile_url": "https://linkedin.com/in/davidbrown",
+      "post_date": "2024-01-19",
+      "exact_date": true,
+      "post_content": "Lockheed Martin is expanding! We're looking for talented individuals to fill various roles. Competitive salary and benefits."
+    },
+    {
+      "name": "Jennifer Lee",
+      "title": "Talent Manager",
+      "company": "Equinix",
+      "connection_degree": "3rd",
+      "post_url": "https://linkedin.com/posts/test6",
+      "linkedin_profile_url": "https://linkedin.com/in/jenniferlee",
+      "post_date": "2024-01-20",
+      "exact_date": true,
+      "post_content": "Equinix is hiring! We're looking for passionate professionals to help us continue our growth and innovation."
+    },
+    {
+      "name": "Robert Taylor",
+      "title": "Recruitment Lead",
+      "company": "Commvault",
+      "connection_degree": "2nd",
+      "post_url": "https://linkedin.com/posts/test7",
+      "linkedin_profile_url": "https://linkedin.com/in/roberttaylor",
+      "post_date": "2024-01-21",
+      "exact_date": true,
+      "post_content": "Commvault has exciting opportunities available! Join our team and be part of something amazing. Multiple positions open."
+    },
+    {
+      "name": "Amanda Garcia",
+      "title": "HR Coordinator",
+      "company": "Druva",
+      "connection_degree": "3rd",
+      "post_url": "https://linkedin.com/posts/test8",
+      "linkedin_profile_url": "https://linkedin.com/in/amandagarcia",
+      "post_date": "2024-01-22",
+      "exact_date": true,
+      "post_content": "Druva is growing and we need talented people! Various positions available with great growth opportunities."
+    },
+    {
+      "name": "Chris Martinez",
+      "title": "Talent Acquisition Specialist",
+      "company": "Cohesity",
+      "connection_degree": "2nd",
+      "post_url": "https://linkedin.com/posts/test9",
+      "linkedin_profile_url": "https://linkedin.com/in/chrismartinez",
+      "post_date": "2024-01-23",
+      "exact_date": true,
+      "post_content": "Cohesity is hiring! We're looking for motivated professionals to join our dynamic team. Apply today!"
+    },
+    {
+      "name": "Michelle Rodriguez",
+      "title": "HR Manager",
+      "company": "Celigo",
+      "connection_degree": "3rd",
+      "post_url": "https://linkedin.com/posts/test10",
+      "linkedin_profile_url": "https://linkedin.com/in/michellerodriguez",
+      "post_date": "2024-01-24",
+      "exact_date": true,
+      "post_content": "Celigo has exciting career opportunities! We're expanding our team and looking for the best talent."
+    },
+    {
+      "name": "Kevin Thompson",
+      "title": "Marketing Director",
+      "company": "Microsoft",
+      "connection_degree": "2nd",
+      "post_url": "https://linkedin.com/posts/test11",
+      "linkedin_profile_url": "https://linkedin.com/in/kevinthompson",
+      "post_date": "2024-01-25",
+      "exact_date": true,
+      "post_content": "Microsoft is hiring! We have several marketing positions available. Great company culture and benefits."
+    },
+    {
+      "name": "Rachel Green",
+      "title": "Talent Acquisition Manager",
+      "company": "Google",
+      "connection_degree": "3rd",
+      "post_url": "https://linkedin.com/posts/test12",
+      "linkedin_profile_url": "https://linkedin.com/in/rachelgreen",
+      "post_date": "2024-01-26",
+      "exact_date": true,
+      "post_content": "Google is expanding our team! Looking for talented professionals to join us. Amazing opportunities available."
+    }
+  ],
+  "expected_results": {
+    "current_past_clients": [
+      "3D Systems",
+      "A10 Networks",
+      "Aeris Communications",
+      "Amazon or AWS or Amazon Web Services",
+      "Arrow Electronics",
+      "Axcient",
+      "Beyond Identity",
+      "Broadcom",
+      "Celigo",
+      "Centrify",
+      "Cisco",
+      "Cloudian",
+      "Cohesity",
+      "Commonwealth of Pennsylvania",
+      "Commvault",
+      "Conversica",
+      "Copado",
+      "Cyral",
+      "D2iQ",
+      "Datameer",
+      "Datera",
+      "Department of the Air Force",
+      "Druva",
+      "Enphase Energy",
+      "Equinix",
+      "Exasol"
+    ],
+    "excluded_clients": [
+      "Bristol Myers Squibb",
+      "Lockheed Martin"
+    ],
+    "neutral_clients": [
+      "Microsoft",
+      "Google"
+    ],
+    "test_scenarios": {
+      "current_past_client_posts": [
+        "Should generate special message mentioning previous relationship",
+        "Should include 'We previously supported [COMPANY NAME] as an approved vendor' in message"
+      ],
+      "excluded_client_posts": [
+        "Should be marked as 'BLOCKED' in CSV export",
+                  "Should have connection message set to 'BLOCKED - Company is excluded'"
+      ],
+      "neutral_client_posts": [
+        "Should generate standard connection message",
+        "Should not be marked as blocked"
+      ]
+    }
+  }
+} 

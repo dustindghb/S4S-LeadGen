@@ -1,7 +1,7 @@
 # Client Lists Feature
 
 ## Overview
-The S4S LinkedIn Tool now includes a client lists management feature that allows you to upload an Excel/CSV file containing current/past clients and blacklisted clients. This feature customizes connection messages and marks blocked companies in the generated leads.
+The S4S LinkedIn Tool now includes a client lists management feature that allows you to upload an Excel/CSV file containing current/past clients and excluded clients. This feature customizes connection messages and marks blocked companies in the generated leads.
 
 ## How to Use
 
@@ -12,22 +12,14 @@ The S4S LinkedIn Tool now includes a client lists management feature that allows
 ### 2. Upload Your Client Lists
 - Click "Choose File" and select your Excel or CSV file
 - Click "Upload" to process the file
-- The system will display the number of current/past clients and blacklisted clients loaded
+- The system will display the number of current/past clients and excluded clients loaded
 
 ### 3. File Format
-Your Excel/CSV file should have two columns:
+Your Excel/CSV file should be structured with:
 - **Column A**: Current/Past Clients (companies you've worked with)
-- **Column B**: Blacklisted Clients (companies you want to avoid)
+- **Column C**: Excluded Clients (companies you want to avoid)
 
-Example format:
-```
-Current/Past Clients | Blacklisted Clients
-NetApp              | Company A
-AWS                 | Company B
-Salesforce          | Company C
-ServiceNow          | Company D
-HPE                 | Company E
-```
+The file should have at least 3 columns, with Column B being empty or containing other data.
 
 ### 4. How It Works
 
@@ -66,13 +58,13 @@ niti@stage4solutions.com
 www.stage4solutions.com/
 ```
 
-#### For Blacklisted Clients:
-When a lead's company matches a blacklisted client, the tool:
+#### For Excluded Clients:
+When a lead's company matches an excluded client, the tool:
 - Marks the lead as "BLOCKED" in the CSV export
-- Sets the connection message to "BLOCKED - Company is blacklisted"
+- Sets the connection message to "BLOCKED - Company is excluded"
 
 ### 5. CSV Export Changes
-The exported CSV now includes a new "Blocked Status" column that shows "BLOCKED" for companies in your blacklist.
+The exported CSV now includes a new "Blocked Status" column that shows "BLOCKED" for companies in your excluded list.
 
 ### 6. Managing Your Lists
 - **View Status**: The settings page shows how many companies are loaded in each list
