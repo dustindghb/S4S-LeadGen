@@ -1050,6 +1050,7 @@ JSON:`;
   let lastProcessingTime = 0; // New: track processing time to optimize batch size
   let allAnalyzedPosts = []; // New: store all posts with their analysis results
   let metricsUpdateInterval = null; // New: interval for frequent metrics updates
+  let limitCheckInterval = null; // New: interval for frequent limit checking
   let postLimit = 0; // New: limit for number of posts to analyze
   let postLimitReached = false; // New: flag to track if manual post limit has been reached
   let leadLimit = 0; // New: limit for number of leads to find
@@ -2047,7 +2048,7 @@ JSON:`;
         const tabId = tab.id;
         startBtn.disabled = true;
         stopAllBtn.disabled = false;
-        statusDiv.textContent = 'Preparing to scroll with streaming analysis...';
+        statusDiv.textContent = 'Starting scroll with streaming analysis...';
 
         // Ensure content script is injected
         const injected = await ensureContentScriptInjected();
@@ -2084,6 +2085,16 @@ JSON:`;
         
         // Start streaming analysis before scrolling
         await startStreamingAnalysis(tabId, statusDiv, resultsDiv);
+        
+        // Check if limits are already reached before starting scroll
+        if ((postLimit > 0 && allAnalyzedPosts.length >= postLimit) || 
+            (leadLimit > 0 && streamingLeads.length >= leadLimit)) {
+          console.log('[S4S] Limits already reached before starting scroll - postLimit:', postLimit, 'analyzed:', allAnalyzedPosts.length, 'leadLimit:', leadLimit, 'leads:', streamingLeads.length);
+          statusDiv.textContent = 'Limits already reached. Analysis complete.';
+          startBtn.disabled = false;
+          stopAllBtn.disabled = true;
+          return;
+        }
         
         // Start scrolling with longer timeout
         await sendMessage(tabId, { action: "performSingleScroll" }, 120000); // 2 minutes
@@ -2285,19 +2296,25 @@ JSON:`;
         postLimitReached = true;
         console.log(`[S4S] Manual post limit reached: ${allAnalyzedPosts.length}/${postLimit} posts analyzed`);
         console.log(`[S4S] Total posts found: ${totalPostCount}, Posts analyzed: ${allAnalyzedPosts.length}, Queue size: ${postQueue.length}`);
+        console.log(`[S4S] Attempting to stop scrolling due to post limit...`);
         statusDiv.textContent = `Post limit reached! Analyzed ${allAnalyzedPosts.length} posts. Stopping analysis and scrolling.`;
         
         // Stop scrolling first
         try {
           const tab = await getMostRecentLinkedInTab();
           if (tab) {
-            await sendMessage(tab.id, { action: "stopScroll" }, 5000);
+            console.log(`[S4S] Sending stopScroll message to tab ${tab.id}`);
+            const stopResponse = await sendMessage(tab.id, { action: "stopScroll" }, 5000);
+            console.log(`[S4S] Stop scroll response:`, stopResponse);
+          } else {
+            console.log(`[S4S] No LinkedIn tab found to stop scrolling`);
           }
         } catch (error) {
           console.error('[S4S] Error stopping scroll:', error);
         }
         
         // Stop the streaming analysis
+        console.log(`[S4S] Stopping streaming analysis due to post limit`);
         stopStreamingAnalysis();
         
         // Handle completion
@@ -2346,19 +2363,25 @@ JSON:`;
         if (leadLimit > 0 && streamingLeads.length >= leadLimit && !leadLimitReached) {
           leadLimitReached = true;
           console.log(`[S4S] Manual lead limit reached: ${streamingLeads.length}/${leadLimit} leads found`);
+          console.log(`[S4S] Attempting to stop scrolling due to lead limit...`);
           statusDiv.textContent = `Lead limit reached! Found ${streamingLeads.length} leads. Stopping analysis and scrolling.`;
           
           // Stop scrolling first
           try {
             const tab = await getMostRecentLinkedInTab();
             if (tab) {
-              await sendMessage(tab.id, { action: "stopScroll" }, 5000);
+              console.log(`[S4S] Sending stopScroll message to tab ${tab.id} due to lead limit`);
+              const stopResponse = await sendMessage(tab.id, { action: "stopScroll" }, 5000);
+              console.log(`[S4S] Stop scroll response for lead limit:`, stopResponse);
+            } else {
+              console.log(`[S4S] No LinkedIn tab found to stop scrolling for lead limit`);
             }
           } catch (error) {
-            console.error('[S4S] Error stopping scroll:', error);
+            console.error('[S4S] Error stopping scroll for lead limit:', error);
           }
           
           // Stop the streaming analysis
+          console.log(`[S4S] Stopping streaming analysis due to lead limit`);
           stopStreamingAnalysis();
           
           // Handle completion
@@ -2516,6 +2539,7 @@ JSON:`;
         leadLimitReached = false; // Reset lead limit reached flag
     autoRefreshTriggered = false; // Reset auto-refresh flag
     metricsUpdateInterval = null; // Reset metrics interval
+    limitCheckInterval = null; // Reset limit check interval
     
     // Show metrics
     showMetrics(true);
@@ -2556,6 +2580,58 @@ JSON:`;
         updateMetrics();
       }
     }, 500); // Update metrics every 500ms for smooth display
+    
+    // Start frequent limit checking during scrolling
+    limitCheckInterval = setInterval(() => {
+      if (!isStreamingAnalysis) {
+        clearInterval(limitCheckInterval);
+        return;
+      }
+      
+      // Check post limit
+      if (postLimit > 0 && allAnalyzedPosts.length >= postLimit && !postLimitReached && !autoRefreshTriggered) {
+        console.log(`[S4S] Frequent check: Post limit reached: ${allAnalyzedPosts.length}/${postLimit}`);
+        postLimitReached = true;
+        
+        // Stop scrolling immediately
+        getMostRecentLinkedInTab().then(tab => {
+          if (tab) {
+            console.log(`[S4S] Frequent check: Sending stopScroll message to tab ${tab.id}`);
+            sendMessage(tab.id, { action: "stopScroll" }, 5000).then(response => {
+              console.log(`[S4S] Frequent check: Stop scroll response:`, response);
+            }).catch(error => {
+              console.error('[S4S] Frequent check: Error stopping scroll:', error);
+            });
+          }
+        });
+        
+        // Stop the streaming analysis
+        stopStreamingAnalysis();
+        clearInterval(limitCheckInterval);
+      }
+      
+      // Check lead limit
+      if (leadLimit > 0 && streamingLeads.length >= leadLimit && !leadLimitReached) {
+        console.log(`[S4S] Frequent check: Lead limit reached: ${streamingLeads.length}/${leadLimit}`);
+        leadLimitReached = true;
+        
+        // Stop scrolling immediately
+        getMostRecentLinkedInTab().then(tab => {
+          if (tab) {
+            console.log(`[S4S] Frequent check: Sending stopScroll message to tab ${tab.id} for lead limit`);
+            sendMessage(tab.id, { action: "stopScroll" }, 5000).then(response => {
+              console.log(`[S4S] Frequent check: Stop scroll response for lead limit:`, response);
+            }).catch(error => {
+              console.error('[S4S] Frequent check: Error stopping scroll for lead limit:', error);
+            });
+          }
+        });
+        
+        // Stop the streaming analysis
+        stopStreamingAnalysis();
+        clearInterval(limitCheckInterval);
+      }
+    }, 1000); // Check limits every 1 second
     
     // Start button health monitoring
     startButtonHealthMonitoring();
@@ -2644,6 +2720,10 @@ JSON:`;
     if (metricsUpdateInterval) {
       clearInterval(metricsUpdateInterval);
       metricsUpdateInterval = null;
+    }
+    if (limitCheckInterval) {
+      clearInterval(limitCheckInterval);
+      limitCheckInterval = null;
     }
     if (buttonHealthInterval) {
       clearInterval(buttonHealthInterval);

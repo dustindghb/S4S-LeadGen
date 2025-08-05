@@ -1249,7 +1249,7 @@ if (window.s4sContentScriptLoaded) {
         // Scroll to absolute position
         window.scrollTo(0, targetScrollY);
         
-        console.log('[S4S] Scrolled to position:', targetScrollY, 'pixels');
+        console.log('[S4S] Scrolled to position:', targetScrollY, 'pixels, shouldStopScrolling:', shouldStopScrolling);
         
         // Wait for the interval
         await new Promise(resolve => setTimeout(resolve, scrollInterval));
@@ -1380,7 +1380,10 @@ if (window.s4sContentScriptLoaded) {
       }
 
       if (msg.action === "stopScroll") {
+        console.log('[S4S] Received stopScroll message from popup');
+        console.log('[S4S] Current scrolling state - isScrolling:', isScrolling, 'shouldStopScrolling:', shouldStopScrolling);
         stopScrolling();
+        console.log('[S4S] After stopScrolling() - isScrolling:', isScrolling, 'shouldStopScrolling:', shouldStopScrolling);
         sendResponse({ success: true, message: "Scrolling stopped" });
         return false; // Synchronous response
       }
