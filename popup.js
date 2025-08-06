@@ -49,21 +49,25 @@ async function ensureContentScriptInjected() {
     return null;
   }
   
-  // Function to send message to content script with timeout
+  // Function to send message to content script with timeout and stealth delays
   async function sendMessage(tabId, message, timeout = 10000) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(new Error('Message timeout'));
       }, timeout);
       
-      chrome.tabs.sendMessage(tabId, message, (response) => {
-        clearTimeout(timer);
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-        } else {
-          resolve(response);
-        }
-      });
+      // Add small random delay to simulate human-like timing
+      const randomDelay = Math.floor(Math.random() * 100) + 50; // 50-150ms delay
+      setTimeout(() => {
+        chrome.tabs.sendMessage(tabId, message, (response) => {
+          clearTimeout(timer);
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(response);
+          }
+        });
+      }, randomDelay);
     });
   }
   
@@ -905,10 +909,10 @@ JSON:`;
     };
   }
 
-  // Function to batch analyze posts for better performance
+  // Function to batch analyze posts for better performance with stealth improvements
   async function batchAnalyzePosts(posts, batchSize = 5) {
     const results = [];
-    console.log('[S4S] Starting batch analysis of', posts.length, 'posts with batch size', batchSize);
+    console.log('[S4S] Starting stealth batch analysis of', posts.length, 'posts with batch size', batchSize);
     
     for (let i = 0; i < posts.length; i += batchSize) {
       const batch = posts.slice(i, i + batchSize);
@@ -916,9 +920,22 @@ JSON:`;
       
       const batchPromises = batch.map(async (post, index) => {
         try {
-          console.log(`[S4S] Analyzing post ${i + index + 1}: ${post.name || 'Unknown'}`);
+          // Reduced logging for stealth
+          if (Math.random() < 0.3) { // Only log 30% of post analyses
+            console.log(`[S4S] Analyzing post ${i + index + 1}: ${post.name || 'Unknown'}`);
+          }
+          
+          // Add random delay before each AI request to simulate human thinking
+          const thinkingDelay = Math.floor(Math.random() * 500) + 200; // 200-700ms
+          await new Promise(resolve => setTimeout(resolve, thinkingDelay));
+          
           const isHiring = await checkIfPostIsHiring(post);
-          console.log(`[S4S] Post ${i + index + 1} result:`, isHiring ? 'HIRING' : 'NOT HIRING');
+          
+          // Reduced logging for stealth
+          if (Math.random() < 0.2) { // Only log 20% of results
+            console.log(`[S4S] Post ${i + index + 1} result:`, isHiring ? 'HIRING' : 'NOT HIRING');
+          }
+          
           return { post, isHiring, index: i + index };
         } catch (error) {
           console.error(`[S4S] Error analyzing post ${i + index + 1}:`, error);
@@ -927,15 +944,16 @@ JSON:`;
       });
       
       try {
-        // Process batch with delay
+        // Process batch with randomized delay
         const batchResults = await Promise.all(batchPromises);
         results.push(...batchResults);
         console.log(`[S4S] Batch ${Math.floor(i/batchSize) + 1} completed successfully`);
         
-        // Add delay between batches
+        // Add randomized delay between batches to simulate human behavior
         if (i + batchSize < posts.length) {
-          console.log('[S4S] Waiting 200ms before next batch...');
-          await new Promise(resolve => setTimeout(resolve, 200));
+          const batchDelay = Math.floor(Math.random() * 400) + 300; // 300-700ms
+          console.log(`[S4S] Waiting ${batchDelay}ms before next batch...`);
+          await new Promise(resolve => setTimeout(resolve, batchDelay));
         }
       } catch (error) {
         console.error(`[S4S] Error processing batch ${Math.floor(i/batchSize) + 1}:`, error);
@@ -946,7 +964,7 @@ JSON:`;
       }
     }
     
-    console.log('[S4S] Batch analysis completed. Total results:', results.length);
+    console.log('[S4S] Stealth batch analysis completed. Total results:', results.length);
     return results;
   }
 
@@ -2214,7 +2232,7 @@ JSON:`;
     });
   });
 
-  // New: Function to analyze a single post in real-time
+  // New: Function to analyze a single post in real-time with stealth improvements
   async function analyzeSinglePostStreaming(post, statusDiv, resultsDiv, tabId) {
     try {
       // Check if this post was already analyzed to prevent duplicates
@@ -2225,10 +2243,16 @@ JSON:`;
       });
       
       if (alreadyAnalyzed) {
-        console.log(`[S4S] Post already analyzed, skipping: ${post.name}`);
-        console.log(`[S4S] Duplicate post skipped - this reduces the number of posts that get analyzed`);
+        // Reduced logging for stealth
+        if (Math.random() < 0.1) { // Only log 10% of duplicate skips
+          console.log(`[S4S] Post already analyzed, skipping: ${post.name}`);
+        }
         return false;
       }
+      
+      // Add random delay before analysis to simulate human reading time
+      const readingDelay = Math.floor(Math.random() * 800) + 300; // 300-1100ms
+      await new Promise(resolve => setTimeout(resolve, readingDelay));
       
       // Check if post is hiring
       const isHiring = await checkIfPostIsHiring(post);
@@ -2326,7 +2350,10 @@ JSON:`;
       updateDateFilterUI();
       
       if (isHiring) {
-        console.log(`[S4S] Streaming: Post is hiring - ${post.name}`);
+        // Reduced logging for stealth
+        if (Math.random() < 0.5) { // Only log 50% of hiring posts
+          console.log(`[S4S] Streaming: Post is hiring - ${post.name}`);
+        }
         
         // Extract title, company, and position
         const titleCompanyData = await extractTitleAndCompany(post);
@@ -2347,7 +2374,10 @@ JSON:`;
         });
         
         if (alreadyAdded) {
-          console.log(`[S4S] Lead already added, skipping: ${enrichedPost.name}`);
+          // Reduced logging for stealth
+          if (Math.random() < 0.2) { // Only log 20% of duplicate leads
+            console.log(`[S4S] Lead already added, skipping: ${enrichedPost.name}`);
+          }
           return true; // Still return true since it was a valid lead
         }
         
@@ -2423,7 +2453,10 @@ JSON:`;
         console.log(logMessage);
         return true;
       } else {
-        console.log(`[S4S] Streaming: Post is not hiring - ${post.name}`);
+        // Reduced logging for stealth
+        if (Math.random() < 0.1) { // Only log 10% of non-hiring posts
+          console.log(`[S4S] Streaming: Post is not hiring - ${post.name}`);
+        }
         return false;
       }
     } catch (error) {

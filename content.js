@@ -11,6 +11,75 @@ if (window.s4sContentScriptLoaded) {
     console.log('[S4S] Content script initialized and ready');
   }, 500);
 
+  // Stealth utilities for human-like behavior
+  const stealthUtils = {
+    // Generate random delays between operations
+    randomDelay: (min, max) => {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    },
+    
+    // Human-like scrolling speeds (pixels per second)
+    getRandomScrollSpeed: () => {
+      const speeds = [150, 200, 250, 300, 350, 400, 450, 500, 550, 600];
+      return speeds[Math.floor(Math.random() * speeds.length)];
+    },
+    
+    // Random pause intervals (seconds)
+    getRandomPauseInterval: () => {
+      return Math.random() * 3 + 1; // 1-4 seconds
+    },
+    
+    // Random pause duration (milliseconds)
+    getRandomPauseDuration: () => {
+      return Math.random() * 2000 + 500; // 500-2500ms
+    },
+    
+    // Throttle DOM queries to avoid detection
+    throttledQuerySelector: (() => {
+      let lastQuery = 0;
+      const minInterval = 50; // Minimum 50ms between queries
+      
+      return (element, selector) => {
+        const now = Date.now();
+        if (now - lastQuery < minInterval) {
+          return new Promise(resolve => {
+            setTimeout(() => {
+              lastQuery = Date.now();
+              resolve(element.querySelector(selector));
+            }, minInterval - (now - lastQuery));
+          });
+        }
+        lastQuery = now;
+        return Promise.resolve(element.querySelector(selector));
+      };
+    })(),
+    
+    // Batch DOM queries to reduce detection
+    batchQuerySelector: async (element, selectors) => {
+      const results = [];
+      for (const selector of selectors) {
+        const result = await stealthUtils.throttledQuerySelector(element, selector);
+        results.push(result);
+        // Small random delay between queries
+        await new Promise(resolve => setTimeout(resolve, stealthUtils.randomDelay(10, 30)));
+      }
+      return results;
+    },
+    
+    // Human-like mouse movement simulation (for future use)
+    simulateMouseMovement: () => {
+      // This could be used to simulate natural mouse movements
+      // For now, just a placeholder for future stealth features
+    },
+    
+    // Randomize operation timing
+    randomizeOperation: async (operation, baseDelay = 100) => {
+      const delay = baseDelay + stealthUtils.randomDelay(0, 200);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return operation();
+    }
+  };
+
   // Add timeout wrapper for long-running operations
   function withTimeout(promise, timeoutMs = 30000) {
     return Promise.race([
@@ -35,10 +104,16 @@ if (window.s4sContentScriptLoaded) {
       
       let foundPosts = [];
       for (const selector of postSelectors) {
-        foundPosts = document.querySelectorAll(selector);
-        if (foundPosts.length > 0) {
-          break;
+        // Use throttled query selector for stealth
+        const posts = await stealthUtils.throttledQuerySelector(document, selector);
+        if (posts) {
+          foundPosts = document.querySelectorAll(selector);
+          if (foundPosts.length > 0) {
+            break;
+          }
         }
+        // Random delay between selector attempts
+        await new Promise(resolve => setTimeout(resolve, stealthUtils.randomDelay(50, 150)));
       }
       
       // Process all found posts (removed 50 post limit)
@@ -46,6 +121,11 @@ if (window.s4sContentScriptLoaded) {
       
       for (let index = 0; index < maxPosts; index++) {
         const post = foundPosts[index];
+        
+        // Add random processing delays to simulate human reading
+        if (index % 3 === 0) {
+          await new Promise(resolve => setTimeout(resolve, stealthUtils.randomDelay(20, 80)));
+        }
         
         // Try to get cached URL first
         let postUrl = post.dataset.s4sPostUrl || extractPostUrl(post, index);
@@ -61,18 +141,15 @@ if (window.s4sContentScriptLoaded) {
         let nameContainer = null;
         
         // First, try to find the specific author name element with the exact class
-        const authorNameElement = post.querySelector('span.sExBUDsubYecFzuEceaNRAkkGmqOjwDiPLAo span[aria-hidden="true"]');
+        const authorNameElement = await stealthUtils.throttledQuerySelector(post, 'span.sExBUDsubYecFzuEceaNRAkkGmqOjwDiPLAo span[aria-hidden="true"]');
         
         if (authorNameElement && authorNameElement.innerText.trim()) {
           name = authorNameElement.innerText.trim();
-          console.log(`[S4S] Post ${index + 1} found author name: "${name}"`);
           
           // Find the closest container that should hold the profile link
           nameContainer = authorNameElement.closest('.feed-shared-actor__container, .update-components-actor, [class*="actor"]');
           
           if (nameContainer) {
-            console.log(`[S4S] Post ${index + 1} found name container:`, nameContainer);
-            
             // Look for the profile link within this specific container
             const profileSelectors = [
               'a[data-control-name="actor_profile"]',
@@ -81,20 +158,19 @@ if (window.s4sContentScriptLoaded) {
             ];
             
             for (const profileSelector of profileSelectors) {
-              const profileLink = nameContainer.querySelector(profileSelector);
+              const profileLink = await stealthUtils.throttledQuerySelector(nameContainer, profileSelector);
               if (profileLink && profileLink.href) {
                 linkedinUrl = profileLink.href;
-                console.log(`[S4S] Post ${index + 1} found author profile URL: ${linkedinUrl} for author: ${name}`);
                 break;
               }
+              // Small delay between profile link searches
+              await new Promise(resolve => setTimeout(resolve, stealthUtils.randomDelay(5, 15)));
             }
           }
         }
         
         // If we didn't find the specific author name, try broader search
         if (!name || !linkedinUrl) {
-          console.log(`[S4S] Post ${index + 1} trying broader search - name: "${name}", profile: "${linkedinUrl}"`);
-          
           // Try to find the main actor/author container
           const actorContainers = [
             '.feed-shared-actor__container',
@@ -104,10 +180,8 @@ if (window.s4sContentScriptLoaded) {
           ];
           
           for (const containerSelector of actorContainers) {
-            const container = post.querySelector(containerSelector);
+            const container = await stealthUtils.throttledQuerySelector(post, containerSelector);
             if (container) {
-              console.log(`[S4S] Post ${index + 1} found actor container:`, container);
-              
               // Look for the author's name within this container
               const nameSelectors = [
                 'span.feed-shared-actor__name',
@@ -118,7 +192,7 @@ if (window.s4sContentScriptLoaded) {
               ];
               
               for (const nameSelector of nameSelectors) {
-                const nameElem = container.querySelector(nameSelector);
+                const nameElem = await stealthUtils.throttledQuerySelector(container, nameSelector);
                 if (nameElem && nameElem.innerText.trim() && nameElem.innerText.trim().length > 0) {
                   const candidateName = nameElem.innerText.trim();
                   // Filter out common non-name text
@@ -129,10 +203,11 @@ if (window.s4sContentScriptLoaded) {
                       !candidateName.includes('Connect')) {
                     name = candidateName;
                     nameContainer = container;
-                    console.log(`[S4S] Post ${index + 1} found author name: "${name}" using selector: ${nameSelector}`);
                     break;
                   }
                 }
+                // Small delay between name searches
+                await new Promise(resolve => setTimeout(resolve, stealthUtils.randomDelay(5, 15)));
               }
               
               // If we found a name, look for the corresponding profile link
@@ -144,50 +219,49 @@ if (window.s4sContentScriptLoaded) {
                 ];
                 
                 for (const profileSelector of profileSelectors) {
-                  const profileLink = container.querySelector(profileSelector);
+                  const profileLink = await stealthUtils.throttledQuerySelector(container, profileSelector);
                   if (profileLink && profileLink.href) {
                     linkedinUrl = profileLink.href;
-                    console.log(`[S4S] Post ${index + 1} found author profile URL: ${linkedinUrl} for author: ${name}`);
                     break;
                   }
+                  // Small delay between profile link searches
+                  await new Promise(resolve => setTimeout(resolve, stealthUtils.randomDelay(5, 15)));
                 }
                 break; // Found both name and container, exit
               }
             }
+            // Small delay between container searches
+            await new Promise(resolve => setTimeout(resolve, stealthUtils.randomDelay(10, 25)));
           }
         }
         
         // Fallback: if we didn't find both name and profile, try broader search
         if (!name || !linkedinUrl) {
-          console.log(`[S4S] Post ${index + 1} fallback search - name: "${name}", profile: "${linkedinUrl}"`);
-          
           // Try to find any profile link in the post
           if (!linkedinUrl) {
-            const anyProfile = post.querySelector('a[href*="/in/"]');
+            const anyProfile = await stealthUtils.throttledQuerySelector(post, 'a[href*="/in/"]');
             if (anyProfile && anyProfile.href) {
               linkedinUrl = anyProfile.href;
-              console.log(`[S4S] Post ${index + 1} found fallback profile URL: ${linkedinUrl}`);
             }
           }
           
           // Try to find any name in the post
           if (!name) {
-            const anyName = post.querySelector('span[aria-hidden="true"]');
+            const anyName = await stealthUtils.throttledQuerySelector(post, 'span[aria-hidden="true"]');
             if (anyName && anyName.innerText.trim()) {
               const candidateName = anyName.innerText.trim();
               if (candidateName.length > 1 && candidateName.length < 50) {
                 name = candidateName;
-                console.log(`[S4S] Post ${index + 1} found fallback name: "${name}"`);
               }
             }
           }
         }
         
         if (!name) {
-          console.log(`[S4S] Post ${index + 1} no author name found`);
+          // Reduced logging for stealth
         }
         if (!linkedinUrl) {
-          console.log(`[S4S] Post ${index + 1} no LinkedIn profile URL found for author: ${name}`);
+          // Reduced logging for stealth
         }
         
         // Extract professional information - focused on headline
@@ -199,14 +273,6 @@ if (window.s4sContentScriptLoaded) {
         const extractedAge = dateInfo.age;
         const postDate = dateInfo.postDate;
         const exactDate = dateInfo.exactDate;
-        
-        if (index < 3) {
-          console.log(`[S4S] Post ${index + 1} extracted data:`, {
-            age: extractedAge,
-            postDate: postDate,
-            exactDate: exactDate
-          });
-        }
         
         // Extract headline using the specific HTML structure provided
         const headlineSelectors = [
@@ -220,20 +286,16 @@ if (window.s4sContentScriptLoaded) {
         // Also check for connection degree in headline elements
         let foundConnectionDegree = '';
         
-        console.log(`[S4S] Post ${index + 1} headline extraction - name: "${name}"`);
-        
         for (const selector of headlineSelectors) {
-          const headlineElem = post.querySelector(selector);
+          const headlineElem = await stealthUtils.throttledQuerySelector(post, selector);
           if (headlineElem && headlineElem.innerText.trim()) {
             const text = headlineElem.innerText.trim();
-            console.log(`[S4S] Post ${index + 1} found headline candidate: "${text}" using selector: ${selector}`);
             
             // Check for connection degree in this text
             if (!foundConnectionDegree) {
               const connectionMatch = text.match(/\b(1st|2nd|3rd\+?)\b/i);
               if (connectionMatch) {
                 foundConnectionDegree = connectionMatch[1];
-                console.log(`[S4S] Found connection degree in headline element: ${foundConnectionDegree}`);
               }
             }
             
@@ -243,17 +305,15 @@ if (window.s4sContentScriptLoaded) {
                 text.length > 2 && 
                 text.length < 200) {
               headline = text;
-              console.log(`[S4S] Post ${index + 1} selected headline: "${headline}"`);
               break;
-            } else {
-              console.log(`[S4S] Post ${index + 1} rejected headline candidate: "${text}" (reason: ${text === name ? 'same as name' : text.length <= 2 ? 'too short' : 'too long'})`);
             }
           }
+          // Small delay between headline searches
+          await new Promise(resolve => setTimeout(resolve, stealthUtils.randomDelay(5, 15)));
         }
         
         // Fallback headline extraction
         if (!headline) {
-          console.log(`[S4S] Post ${index + 1} trying fallback headline extraction`);
           const fallbackSelectors = [
             '.update-components-actor__description',
             '.feed-shared-actor__subline',
@@ -263,20 +323,20 @@ if (window.s4sContentScriptLoaded) {
           ];
           
           for (const selector of fallbackSelectors) {
-            const headlineElem = post.querySelector(selector);
+            const headlineElem = await stealthUtils.throttledQuerySelector(post, selector);
             if (headlineElem && headlineElem.innerText.trim()) {
               const text = headlineElem.innerText.trim();
-              console.log(`[S4S] Post ${index + 1} fallback headline candidate: "${text}" using selector: ${selector}`);
               
               if (text && 
                   text !== name && 
                   text.length > 2 && 
                   text.length < 200) {
                 headline = text;
-                console.log(`[S4S] Post ${index + 1} selected fallback headline: "${headline}"`);
                 break;
               }
             }
+            // Small delay between fallback searches
+            await new Promise(resolve => setTimeout(resolve, stealthUtils.randomDelay(5, 15)));
           }
         }
         
@@ -284,9 +344,6 @@ if (window.s4sContentScriptLoaded) {
           headline = headline
             .replace(/\s+•\s+.*$/, '')
             .trim();
-          console.log(`[S4S] Post ${index + 1} final cleaned headline: "${headline}"`);
-        } else {
-          console.log(`[S4S] Post ${index + 1} no headline found`);
         }
         
         // Extract content - including reposted content
@@ -303,7 +360,7 @@ if (window.s4sContentScriptLoaded) {
         
         // First, try to extract the main post content
         for (const selector of contentSelectors) {
-          const contentElem = post.querySelector(selector);
+          const contentElem = await stealthUtils.throttledQuerySelector(post, selector);
           if (contentElem && contentElem.innerText.trim()) {
             const text = contentElem.innerText.trim();
             if (text.length > 10 && 
@@ -314,13 +371,13 @@ if (window.s4sContentScriptLoaded) {
                 !text.includes('2nd') && 
                 !text.includes('3rd+')) {
               content = cleanTextContent(text);
-              console.log(`[S4S] Post ${index + 1} found main content: "${content.substring(0, 100)}..."`);
               break;
             } else {
               contentFilteredReason = `Filtered out by length/keywords (length: ${text.length}, text: '${text.slice(0, 40)}...')`;
-              console.log(`[S4S] Post ${index + 1} content found but filtered:`, contentFilteredReason);
             }
           }
+          // Small delay between content searches
+          await new Promise(resolve => setTimeout(resolve, stealthUtils.randomDelay(5, 15)));
         }
         
         // Check if this is a repost and extract original content
@@ -328,12 +385,9 @@ if (window.s4sContentScriptLoaded) {
         
         // If main content is empty or very short, look for reposted content
         if (!content || content.length < 50) {
-          console.log(`[S4S] Post ${index + 1} main content is empty or short, looking for reposted content...`);
-          
           // If we detected a repost, use the original content
           if (repostInfo.isRepost && repostInfo.originalContent) {
             content = repostInfo.originalContent;
-            console.log(`[S4S] Post ${index + 1} using detected repost content: "${content.substring(0, 100)}..."`);
           } else {
             // Look for reposted content - LinkedIn reposts are often in different containers
             const repostSelectors = [
@@ -375,7 +429,6 @@ if (window.s4sContentScriptLoaded) {
                   const cleanedText = cleanTextContent(text);
                   if (cleanedText.length > content.length) {
                     content = cleanedText;
-                    console.log(`[S4S] Post ${index + 1} found reposted content: "${content.substring(0, 100)}..." using selector: ${selector}`);
                     break;
                   }
                 }
@@ -392,13 +445,10 @@ if (window.s4sContentScriptLoaded) {
           
           // Combine them with clear separation
           content = `${commentary}\n\n--- Original Post ---\n${originalContent}`;
-          console.log(`[S4S] Post ${index + 1} combined repost commentary with original content`);
         }
         
         // If still no content, try to find any meaningful text in the post
         if (!content || content.length < 20) {
-          console.log(`[S4S] Post ${index + 1} still no content, trying broader search...`);
-          
           // Look for any text content that might be meaningful
           const allTextElements = post.querySelectorAll('div, span, p');
           let bestContent = '';
@@ -424,15 +474,12 @@ if (window.s4sContentScriptLoaded) {
           
           if (bestContent && bestContent.length > content.length) {
             content = bestContent;
-            console.log(`[S4S] Post ${index + 1} found content via broad search: "${content.substring(0, 100)}..."`);
           }
         }
         
         // Debug log if content is still empty after all selectors
         if (!content) {
-          console.log(`[S4S] Post ${index + 1} content is empty after all selectors.`, contentFilteredReason, 'Post outerHTML:', post.outerHTML.slice(0, 1000));
-        } else {
-          console.log(`[S4S] Post ${index + 1} final content length: ${content.length} characters`);
+          // Reduced logging for stealth
         }
         
         // Clean headline text as well
@@ -446,16 +493,12 @@ if (window.s4sContentScriptLoaded) {
         // If not found by dedicated extraction, use the one found in headline elements
         if (!connectionDegree && foundConnectionDegree) {
           connectionDegree = foundConnectionDegree;
-          console.log(`[S4S] Using connection degree from headline element: ${connectionDegree}`);
         }
         
         // Default to "3rd" if no connection degree found
         if (!connectionDegree) {
           connectionDegree = '3rd';
-          console.log(`[S4S] No connection degree found, defaulting to "3rd"`);
         }
-        
-        console.log(`[S4S] Post ${index + 1} final connection degree: "${connectionDegree}"`);
         
         // Only add posts that have meaningful content
         if (name && (content || headline)) {
@@ -513,7 +556,6 @@ if (window.s4sContentScriptLoaded) {
     for (const indicator of repostIndicators) {
       if (mainContent.includes(indicator)) {
         isRepost = true;
-        console.log(`[S4S] Detected repost indicator: "${indicator}"`);
         break;
       }
     }
@@ -530,7 +572,6 @@ if (window.s4sContentScriptLoaded) {
     for (const selector of repostStructureSelectors) {
       if (post.querySelector(selector)) {
         isRepost = true;
-        console.log(`[S4S] Detected repost structure: ${selector}`);
         break;
       }
     }
@@ -585,7 +626,6 @@ if (window.s4sContentScriptLoaded) {
     
     if (bestContent) {
       originalContent = bestContent;
-      console.log(`[S4S] Extracted original repost content: "${originalContent.substring(0, 100)}..."`);
     }
     
     return { isRepost, originalContent };
@@ -665,7 +705,6 @@ if (window.s4sContentScriptLoaded) {
       if (element) {
         const degree = getConnectionDegree(element.textContent);
         if (degree) {
-          console.log(`[S4S] Found connection degree "${degree}" using selector: ${selector}`);
           return degree;
         }
       }
@@ -674,18 +713,15 @@ if (window.s4sContentScriptLoaded) {
     // Fallback: search the entire post element
     const fallbackDegree = getConnectionDegree(postElement);
     if (fallbackDegree) {
-      console.log(`[S4S] Found connection degree "${fallbackDegree}" using fallback search`);
       return fallbackDegree;
     }
     
-    console.log('[S4S] No connection degree found');
     return null;
   }
 
   // Function to extract connection degree information (legacy wrapper)
   function extractConnectionDegree(post) {
     try {
-      console.log('[S4S] Starting connection degree extraction for post');
       const result = getConnectionDegreeFromDOM(post);
       return result || '3rd'; // Return "3rd" instead of empty string for backward compatibility
     } catch (error) {
@@ -788,8 +824,6 @@ if (window.s4sContentScriptLoaded) {
     let postDate = null;
     let postDateString = '';
     
-    console.log(`[S4S] Starting date extraction for post ${index + 1}`);
-    
     const timeSelectors = [
       'time',
       'span[class*="time"]',
@@ -805,16 +839,13 @@ if (window.s4sContentScriptLoaded) {
     // First, try to get the actual timestamp from HTML attributes
     for (const selector of timeSelectors) {
       const timeElems = post.querySelectorAll(selector);
-      console.log(`[S4S] Post ${index + 1} found ${timeElems.length} elements with selector: ${selector}`);
       
       for (const timeElem of timeElems) {
         // Check for datetime attribute (most reliable)
         const datetime = timeElem.getAttribute('datetime');
         if (datetime) {
-          console.log(`[S4S] Post ${index + 1} found datetime:`, datetime);
           postDate = new Date(datetime);
           postDateString = postDate.toISOString().split('T')[0]; // YYYY-MM-DD format
-          console.log(`[S4S] Post ${index + 1} exact date from datetime:`, postDateString);
           break;
         }
         
@@ -823,26 +854,21 @@ if (window.s4sContentScriptLoaded) {
                          timeElem.getAttribute('data-time') ||
                          timeElem.getAttribute('data-date');
         if (timestamp) {
-          console.log(`[S4S] Post ${index + 1} found timestamp:`, timestamp);
           postDate = new Date(parseInt(timestamp) * 1000); // Convert Unix timestamp
           postDateString = postDate.toISOString().split('T')[0];
-          console.log(`[S4S] Post ${index + 1} exact date from timestamp:`, postDateString);
           break;
         }
         
         // Check for title attribute with full date
         const title = timeElem.getAttribute('title');
         if (title && title.includes(',')) {
-          console.log(`[S4S] Post ${index + 1} found title:`, title);
           try {
             postDate = new Date(title);
             if (!isNaN(postDate)) {
               postDateString = postDate.toISOString().split('T')[0];
-              console.log(`[S4S] Post ${index + 1} exact date from title:`, postDateString);
               break;
             }
           } catch (e) {
-            console.log(`[S4S] Post ${index + 1} failed to parse title date:`, e);
           }
         }
       }
@@ -851,72 +877,55 @@ if (window.s4sContentScriptLoaded) {
     
     // If we couldn't get exact date, extract age and calculate approximate date
     if (!postDate) {
-      console.log(`[S4S] No exact date found, calculating from age for post ${index + 1}`);
-      
       for (const selector of timeSelectors) {
         const timeElems = post.querySelectorAll(selector);
         for (const timeElem of timeElems) {
           if (timeElem && timeElem.innerText.trim()) {
             const text = timeElem.innerText.trim();
-            console.log(`[S4S] Post ${index + 1} time text: "${text}"`);
             
             // Extract age as before
-            if (text.match(/\d+[hmdw]/) || text.includes('ago') || text.includes('min') || text.includes('hour') || text.includes('day') || text.includes('week') || text.includes('month') || text.includes('year')) {
-              console.log(`[S4S] Post ${index + 1} text matches time pattern: "${text}"`);
+            let timeMatch = text.match(/(\d+)\s*(min|minute|hour|day|week|month|year)s?/i);
+            if (!timeMatch) {
+              timeMatch = text.match(/(\d+[hmdw])/);
+            }
+            
+            if (timeMatch) {
+              const value = parseInt(timeMatch[1]);
+              const unit = timeMatch[2] ? timeMatch[2].toLowerCase() : timeMatch[1].slice(-1);
               
-              let timeMatch = text.match(/(\d+)\s*(min|minute|hour|day|week|month|year)s?/i);
-              if (!timeMatch) {
-                timeMatch = text.match(/(\d+[hmdw])/);
+              age = value + (timeMatch[2] ? timeMatch[2].charAt(0) : unit);
+              
+              // Calculate approximate date
+              const now = new Date();
+              switch (unit.charAt(0)) {
+                case 'm':
+                  if (unit === 'min' || unit === 'minute') {
+                    postDate = new Date(now.getTime() - (value * 60 * 1000));
+                  } else { // month
+                    postDate = new Date(now.getTime() - (value * 30 * 24 * 60 * 60 * 1000));
+                  }
+                  break;
+                case 'h':
+                  postDate = new Date(now.getTime() - (value * 60 * 60 * 1000));
+                  break;
+                case 'd':
+                  postDate = new Date(now.getTime() - (value * 24 * 60 * 60 * 1000));
+                  break;
+                case 'w':
+                  postDate = new Date(now.getTime() - (value * 7 * 24 * 60 * 60 * 1000));
+                  break;
+                case 'y':
+                  postDate = new Date(now.getTime() - (value * 365 * 24 * 60 * 60 * 1000));
+                  break;
               }
               
-              console.log(`[S4S] Post ${index + 1} timeMatch:`, timeMatch);
-              
-              if (timeMatch) {
-                const value = parseInt(timeMatch[1]);
-                const unit = timeMatch[2] ? timeMatch[2].toLowerCase() : timeMatch[1].slice(-1);
-                
-                age = value + (timeMatch[2] ? timeMatch[2].charAt(0) : unit);
-                console.log(`[S4S] Post ${index + 1} extracted age: "${age}" (value: ${value}, unit: ${unit})`);
-                
-                // Calculate approximate date
-                const now = new Date();
-                switch (unit.charAt(0)) {
-                  case 'm':
-                    if (unit === 'min' || unit === 'minute') {
-                      postDate = new Date(now.getTime() - (value * 60 * 1000));
-                    } else { // month
-                      postDate = new Date(now.getTime() - (value * 30 * 24 * 60 * 60 * 1000));
-                    }
-                    break;
-                  case 'h':
-                    postDate = new Date(now.getTime() - (value * 60 * 60 * 1000));
-                    break;
-                  case 'd':
-                    postDate = new Date(now.getTime() - (value * 24 * 60 * 60 * 1000));
-                    break;
-                  case 'w':
-                    postDate = new Date(now.getTime() - (value * 7 * 24 * 60 * 60 * 1000));
-                    break;
-                  case 'y':
-                    postDate = new Date(now.getTime() - (value * 365 * 24 * 60 * 60 * 1000));
-                    break;
-                }
-                
-                if (postDate) {
-                  postDateString = postDate.toISOString().split('T')[0];
-                  console.log(`[S4S] Post ${index + 1} calculated date:`, postDateString, 'from age:', age);
-                }
-                break;
-              } else {
-                console.log(`[S4S] Post ${index + 1} no time match found for text: "${text}"`);
+              if (postDate) {
+                postDateString = postDate.toISOString().split('T')[0];
               }
-            } else {
-              console.log(`[S4S] Post ${index + 1} text does not match time pattern: "${text}"`);
+              break;
             }
           }
         }
-        if (age) break;
-      }
     }
     
     // If we have exact date but no age, calculate age from date
@@ -941,8 +950,6 @@ if (window.s4sContentScriptLoaded) {
       postDate: postDateString,
       exactDate: !!postDate // boolean indicating if we found exact date vs calculated
     };
-    
-    console.log(`[S4S] Post ${index + 1} final result:`, result);
     
     return result;
   }
@@ -1209,7 +1216,7 @@ if (window.s4sContentScriptLoaded) {
   let scrollTimeoutId = null;
 
   async function smoothScrollFeed() {
-    console.log('[S4S] Starting continuous 5px/s scroll');
+    console.log('[S4S] Starting stealth scroll with randomized behavior');
     isScrolling = true;
     shouldStopScrolling = false;
     
@@ -1219,15 +1226,17 @@ if (window.s4sContentScriptLoaded) {
     const maxScrollTime = 300000; // 5 minutes maximum scroll time
     const startTime = Date.now();
     
-    // Constant rate scroll settings
-    const pixelsPerSecond = 400; // Fast scroll rate: 400 pixels per second
-    const scrollInterval = 1000; // Update every 1 second
-    const pixelsPerScroll = Math.floor(pixelsPerSecond / (1000 / scrollInterval)); // 400 pixels per second
+    // Stealth scroll settings with randomization
+    let currentScrollSpeed = stealthUtils.getRandomScrollSpeed();
+    let scrollInterval = stealthUtils.randomDelay(800, 1500); // Random interval between 800-1500ms
+    let pixelsPerScroll = Math.floor(currentScrollSpeed / (1000 / scrollInterval));
     
-    console.log('[S4S] Scroll settings - pixels per second:', pixelsPerSecond, 'interval:', scrollInterval, 'ms, pixels per scroll:', pixelsPerScroll);
+    console.log('[S4S] Initial stealth scroll settings - speed:', currentScrollSpeed, 'pixels/s, interval:', scrollInterval, 'ms');
     
-    // Track absolute scroll position to maintain constant rate
+    // Track absolute scroll position to maintain variable rate
     let targetScrollY = window.scrollY;
+    let pauseCounter = 0;
+    const pauseInterval = Math.floor(stealthUtils.getRandomPauseInterval() * 1000); // Random pause interval
     
     try {
       while (!shouldStopScrolling) {
@@ -1243,23 +1252,48 @@ if (window.s4sContentScriptLoaded) {
           break;
         }
         
-        // Calculate next target position (constant rate)
+        // Randomly change scroll speed every few iterations (human-like behavior)
+        if (Math.random() < 0.1) { // 10% chance to change speed
+          currentScrollSpeed = stealthUtils.getRandomScrollSpeed();
+          scrollInterval = stealthUtils.randomDelay(800, 1500);
+          pixelsPerScroll = Math.floor(currentScrollSpeed / (1000 / scrollInterval));
+          console.log('[S4S] Changed scroll speed to:', currentScrollSpeed, 'pixels/s, interval:', scrollInterval, 'ms');
+        }
+        
+        // Random pauses to simulate human reading behavior
+        pauseCounter += scrollInterval;
+        if (pauseCounter >= pauseInterval) {
+          const pauseDuration = stealthUtils.getRandomPauseDuration();
+          console.log('[S4S] Taking human-like pause for', pauseDuration, 'ms');
+          await new Promise(resolve => setTimeout(resolve, pauseDuration));
+          pauseCounter = 0;
+          // Reset pause interval for next pause
+          pauseInterval = Math.floor(stealthUtils.getRandomPauseInterval() * 1000);
+        }
+        
+        // Calculate next target position with variable rate
         targetScrollY += pixelsPerScroll;
         
         // Scroll to absolute position
         window.scrollTo(0, targetScrollY);
         
-        console.log('[S4S] Scrolled to position:', targetScrollY, 'pixels, shouldStopScrolling:', shouldStopScrolling);
+        // Reduced logging for stealth
+        if (Math.random() < 0.05) { // Only log 5% of scroll events
+          console.log('[S4S] Scrolled to position:', targetScrollY, 'pixels');
+        }
         
-        // Wait for the interval
-        await new Promise(resolve => setTimeout(resolve, scrollInterval));
+        // Wait for the interval with small randomization
+        const actualInterval = scrollInterval + stealthUtils.randomDelay(-50, 50);
+        await new Promise(resolve => setTimeout(resolve, actualInterval));
         
-        // Check for new content every few seconds
-        if (Date.now() % 5000 < scrollInterval) { // Check every ~5 seconds
+        // Check for new content every few seconds with randomization
+        if (Date.now() % (4000 + stealthUtils.randomDelay(0, 2000)) < actualInterval) { // Random check interval
           let newHeight = document.documentElement.scrollHeight;
           if (newHeight === lastHeight) {
             stuckCount++;
-            console.log('[S4S] No new content loaded, stuck count:', stuckCount, 'of', maxStuckCount);
+            if (stuckCount % 5 === 0) { // Only log every 5th stuck count
+              console.log('[S4S] No new content loaded, stuck count:', stuckCount, 'of', maxStuckCount);
+            }
             if (stuckCount >= maxStuckCount) {
               console.log('[S4S] Max stuck count reached, stopping scroll');
               break;
@@ -1279,7 +1313,7 @@ if (window.s4sContentScriptLoaded) {
         clearTimeout(scrollTimeoutId);
         scrollTimeoutId = null;
       }
-      console.log('[S4S] Scroll completed');
+      console.log('[S4S] Stealth scroll completed');
     }
   }
 
@@ -1419,4 +1453,5 @@ if (window.s4sContentScriptLoaded) {
     
     return false; // Default to synchronous response
   });
+}
 }
