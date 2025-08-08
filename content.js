@@ -11,72 +11,280 @@ if (window.s4sContentScriptLoaded) {
     console.log('[S4S] Content script initialized and ready');
   }, 500);
 
-  // Stealth utilities for human-like behavior
+  // Session fingerprinting for behavior variation
+  const sessionFingerprint = (() => {
+    const sessionId = Date.now() % 10000; // Unique session identifier
+    const userAgent = navigator.userAgent;
+    const screenRes = `${screen.width}x${screen.height}`;
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    
+    // Create a simple hash of session characteristics
+    let hash = 0;
+    const str = `${sessionId}-${userAgent}-${screenRes}-${timezone}`;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    
+    return {
+      id: Math.abs(hash) % 1000,
+      characteristics: {
+        sessionId,
+        userAgent: userAgent.substring(0, 50), // Truncated for privacy
+        screenRes,
+        timezone
+      }
+    };
+  })();
+
+  // Enhanced stealth utilities for human-like behavior
   const stealthUtils = {
-    // Generate random delays between operations
+    // Generate random delays between operations with more natural distribution
     randomDelay: (min, max) => {
-      return Math.floor(Math.random() * (max - min + 1)) + min;
+      // Use a more natural distribution (slightly weighted toward lower values)
+      const base = Math.random();
+      const weighted = Math.pow(base, 1.5); // Creates more natural distribution
+      return Math.floor(weighted * (max - min + 1)) + min;
     },
     
-    // Human-like scrolling speeds (pixels per second)
+    // Human-like scrolling speeds with more variation
     getRandomScrollSpeed: () => {
-      const speeds = [150, 200, 250, 300, 350, 400, 450, 500, 550, 600];
-      return speeds[Math.floor(Math.random() * speeds.length)];
+      // More varied speeds with some preference for slower speeds (more human-like)
+      const speeds = [100, 120, 150, 180, 200, 250, 300, 350, 400, 450, 500, 550, 600];
+      const weights = [0.15, 0.12, 0.10, 0.08, 0.08, 0.07, 0.06, 0.06, 0.05, 0.05, 0.04, 0.04, 0.04]; // Weighted toward slower speeds
+      
+      const random = Math.random();
+      let cumulativeWeight = 0;
+      for (let i = 0; i < weights.length; i++) {
+        cumulativeWeight += weights[i];
+        if (random <= cumulativeWeight) {
+          return speeds[i];
+        }
+      }
+      return speeds[0]; // Fallback
     },
     
-    // Random pause intervals (seconds)
+    // More natural pause intervals
     getRandomPauseInterval: () => {
-      return Math.random() * 3 + 1; // 1-4 seconds
+      // Humans pause more frequently when reading content
+      const intervals = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10];
+      const weights = [0.25, 0.20, 0.15, 0.12, 0.08, 0.06, 0.04, 0.03, 0.02, 0.02, 0.02, 0.01];
+      
+      const random = Math.random();
+      let cumulativeWeight = 0;
+      for (let i = 0; i < weights.length; i++) {
+        cumulativeWeight += weights[i];
+        if (random <= cumulativeWeight) {
+          return intervals[i];
+        }
+      }
+      return 2; // Fallback
     },
     
-    // Random pause duration (milliseconds)
+    // More varied pause durations
     getRandomPauseDuration: () => {
-      return Math.random() * 2000 + 500; // 500-2500ms
+      // Humans pause for varying durations based on content
+      const durations = [300, 500, 800, 1200, 1800, 2500, 3500, 5000, 8000];
+      const weights = [0.30, 0.25, 0.20, 0.12, 0.06, 0.03, 0.02, 0.01, 0.01];
+      
+      const random = Math.random();
+      let cumulativeWeight = 0;
+      for (let i = 0; i < weights.length; i++) {
+        cumulativeWeight += weights[i];
+        if (random <= cumulativeWeight) {
+          return durations[i];
+        }
+      }
+      return 800; // Fallback
     },
     
-    // Throttle DOM queries to avoid detection
+    // Enhanced throttled DOM queries with more natural timing
     throttledQuerySelector: (() => {
       let lastQuery = 0;
-      const minInterval = 50; // Minimum 50ms between queries
+      let queryCount = 0;
+      const minInterval = 30; // Reduced minimum interval for more natural behavior
       
       return (element, selector) => {
         const now = Date.now();
-        if (now - lastQuery < minInterval) {
+        const timeSinceLastQuery = now - lastQuery;
+        
+        // Vary the minimum interval based on query count (humans slow down when tired)
+        const dynamicMinInterval = minInterval + (queryCount * 2);
+        
+        if (timeSinceLastQuery < dynamicMinInterval) {
           return new Promise(resolve => {
             setTimeout(() => {
               lastQuery = Date.now();
+              queryCount++;
               resolve(element.querySelector(selector));
-            }, minInterval - (now - lastQuery));
+            }, dynamicMinInterval - timeSinceLastQuery);
           });
         }
+        
         lastQuery = now;
+        queryCount++;
         return Promise.resolve(element.querySelector(selector));
       };
     })(),
     
-    // Batch DOM queries to reduce detection
+    // Batch DOM queries with natural grouping
     batchQuerySelector: async (element, selectors) => {
       const results = [];
       for (const selector of selectors) {
         const result = await stealthUtils.throttledQuerySelector(element, selector);
         results.push(result);
-        // Small random delay between queries
-        await new Promise(resolve => setTimeout(resolve, stealthUtils.randomDelay(10, 30)));
+        
+        // Natural delay between queries (humans don't process everything instantly)
+        const naturalDelay = stealthUtils.randomDelay(8, 25);
+        await new Promise(resolve => setTimeout(resolve, naturalDelay));
       }
       return results;
     },
     
-    // Human-like mouse movement simulation (for future use)
-    simulateMouseMovement: () => {
-      // This could be used to simulate natural mouse movements
-      // For now, just a placeholder for future stealth features
+    // Simulate human-like mouse movements
+    simulateMouseMovement: async () => {
+      // Occasionally simulate natural mouse movements to appear more human
+      if (Math.random() < 0.05) { // 5% chance to simulate mouse movement
+        try {
+          // Create a subtle mouse movement event
+          const event = new MouseEvent('mousemove', {
+            clientX: Math.random() * window.innerWidth,
+            clientY: Math.random() * window.innerHeight,
+            bubbles: true,
+            cancelable: true
+          });
+          
+          // Dispatch the event to simulate mouse movement
+          document.dispatchEvent(event);
+          
+          // Reduced logging for stealth
+          if (Math.random() < 0.1) { // Only log 10% of mouse movements
+            console.log('[S4S] Simulated mouse movement');
+          }
+        } catch (error) {
+          // Silently fail if mouse simulation fails
+        }
+      }
     },
     
-    // Randomize operation timing
+    // More sophisticated operation randomization
     randomizeOperation: async (operation, baseDelay = 100) => {
-      const delay = baseDelay + stealthUtils.randomDelay(0, 200);
+      // Add natural variation to operation timing
+      const variation = stealthUtils.randomDelay(-50, 150);
+      const delay = Math.max(50, baseDelay + variation);
       await new Promise(resolve => setTimeout(resolve, delay));
       return operation();
+    },
+    
+    // Simulate human reading patterns
+    simulateReadingTime: async (contentLength) => {
+      // Humans read at different speeds based on content length and complexity
+      const wordsPerMinute = stealthUtils.randomDelay(150, 300); // Natural reading speed variation
+      const words = contentLength / 5; // Rough estimate of words
+      const readingTimeMs = (words / wordsPerMinute) * 60 * 1000;
+      
+      // Add natural variation and ensure minimum time
+      const finalTime = Math.max(200, readingTimeMs + stealthUtils.randomDelay(-100, 200));
+      await new Promise(resolve => setTimeout(resolve, finalTime));
+    },
+    
+    // Simulate human decision-making delays
+    simulateDecisionTime: async (complexity = 'medium') => {
+      // Humans take time to make decisions based on complexity
+      const baseDelays = {
+        'simple': [100, 300],
+        'medium': [300, 800],
+        'complex': [800, 1500]
+      };
+      
+      const [min, max] = baseDelays[complexity] || baseDelays.medium;
+      const decisionTime = stealthUtils.randomDelay(min, max);
+      await new Promise(resolve => setTimeout(resolve, decisionTime));
+    },
+    
+    // Simulate natural browsing patterns
+    simulateBrowsingBehavior: async () => {
+      // Occasionally simulate natural browsing behaviors
+      const behaviors = [
+        () => stealthUtils.simulateReadingTime(stealthUtils.randomDelay(50, 200)),
+        () => stealthUtils.simulateDecisionTime('simple'),
+        () => new Promise(resolve => setTimeout(resolve, stealthUtils.randomDelay(100, 400)))
+      ];
+      
+      const randomBehavior = behaviors[Math.floor(Math.random() * behaviors.length)];
+      await randomBehavior();
+    },
+    
+    // Session-based behavior variation using fingerprint
+    getSessionVariation: () => {
+      // Vary behavior based on session fingerprint to avoid patterns
+      const sessionId = sessionFingerprint.id;
+      const variations = {
+        scrollSpeedMultiplier: 0.7 + (sessionId % 600) / 1000, // 0.7 to 1.3
+        pauseFrequencyMultiplier: 0.6 + (sessionId % 800) / 1000, // 0.6 to 1.4
+        queryDelayMultiplier: 0.8 + (sessionId % 400) / 1000, // 0.8 to 1.2
+        attentionBaseline: 0.8 + (sessionId % 400) / 1000, // 0.8 to 1.2
+        fatigueRate: 0.8 + (sessionId % 400) / 1000 // 0.8 to 1.2
+      };
+      
+      // Reduced logging for stealth
+      if (Math.random() < 0.001) { // Only log 0.1% of session variations
+        console.log('[S4S] Session fingerprint:', sessionId, 'variations:', variations);
+      }
+      
+      return variations;
+    },
+    
+    // Simulate natural browsing interruptions
+    simulateBrowsingInterruption: async () => {
+      // Occasionally simulate natural interruptions (phone calls, distractions, etc.)
+      const interruptionTypes = [
+        { probability: 0.02, duration: [5000, 15000], name: 'short_break' },
+        { probability: 0.01, duration: [15000, 30000], name: 'medium_break' },
+        { probability: 0.005, duration: [30000, 60000], name: 'long_break' }
+      ];
+      
+      for (const interruption of interruptionTypes) {
+        if (Math.random() < interruption.probability) {
+          const duration = stealthUtils.randomDelay(interruption.duration[0], interruption.duration[1]);
+          console.log(`[S4S] Simulating ${interruption.name} for ${Math.round(duration/1000)}s`);
+          await new Promise(resolve => setTimeout(resolve, duration));
+          return true; // Indicates an interruption occurred
+        }
+      }
+      return false; // No interruption
+    },
+    
+    // Simulate human attention patterns with session baseline
+    simulateAttentionPattern: async () => {
+      // Humans have varying attention spans and focus levels
+      const sessionVars = stealthUtils.getSessionVariation();
+      const attentionBaseline = sessionVars.attentionBaseline;
+      
+      const attentionStates = [
+        { probability: 0.6, multiplier: 1.0, name: 'focused' },
+        { probability: 0.3, multiplier: 0.7, name: 'distracted' },
+        { probability: 0.1, multiplier: 0.4, name: 'very_distracted' }
+      ];
+      
+      const random = Math.random();
+      let cumulativeProb = 0;
+      
+      for (const state of attentionStates) {
+        cumulativeProb += state.probability;
+        if (random <= cumulativeProb) {
+          // Apply session baseline to attention multiplier
+          const adjustedMultiplier = state.multiplier * attentionBaseline;
+          
+          // Reduced logging for stealth
+          if (Math.random() < 0.005) { // Only log 0.5% of attention changes
+            console.log(`[S4S] Attention state: ${state.name} (multiplier: ${adjustedMultiplier.toFixed(2)}, baseline: ${attentionBaseline.toFixed(2)})`);
+          }
+          return adjustedMultiplier;
+        }
+      }
+      return attentionBaseline; // Default to session baseline
     }
   };
 
@@ -122,9 +330,13 @@ if (window.s4sContentScriptLoaded) {
       for (let index = 0; index < maxPosts; index++) {
         const post = foundPosts[index];
         
-        // Add random processing delays to simulate human reading
-        if (index % 3 === 0) {
-          await new Promise(resolve => setTimeout(resolve, stealthUtils.randomDelay(20, 80)));
+        // Simulate human reading time based on content length
+        if (post.innerText) {
+          const contentLength = post.innerText.length;
+          await stealthUtils.simulateReadingTime(contentLength);
+        } else {
+          // Fallback delay if no content
+          await new Promise(resolve => setTimeout(resolve, stealthUtils.randomDelay(50, 150)));
         }
         
         // Try to get cached URL first
@@ -1216,27 +1428,36 @@ if (window.s4sContentScriptLoaded) {
   let scrollTimeoutId = null;
 
   async function smoothScrollFeed() {
-    console.log('[S4S] Starting stealth scroll with randomized behavior');
+    console.log('[S4S] Starting enhanced human-like scroll behavior');
     isScrolling = true;
     shouldStopScrolling = false;
     
     let lastHeight = document.documentElement.scrollHeight;
     let stuckCount = 0;
-    const maxStuckCount = 20; // Be very patient with LinkedIn
-    const maxScrollTime = 300000; // 5 minutes maximum scroll time
+    const maxStuckCount = 25; // Increased patience for more human-like behavior
+    const maxScrollTime = 600000; // 10 minutes maximum scroll time (more realistic)
     const startTime = Date.now();
     
-    // Stealth scroll settings with randomization
-    let currentScrollSpeed = stealthUtils.getRandomScrollSpeed();
-    let scrollInterval = stealthUtils.randomDelay(800, 1500); // Random interval between 800-1500ms
+    // Get session variations for more natural behavior
+    const sessionVars = stealthUtils.getSessionVariation();
+    
+    // Enhanced stealth scroll settings with session variation
+    let currentScrollSpeed = Math.floor(stealthUtils.getRandomScrollSpeed() * sessionVars.scrollSpeedMultiplier);
+    let scrollInterval = Math.floor(stealthUtils.randomDelay(1000, 2000) * sessionVars.queryDelayMultiplier); // More varied intervals
     let pixelsPerScroll = Math.floor(currentScrollSpeed / (1000 / scrollInterval));
     
-    console.log('[S4S] Initial stealth scroll settings - speed:', currentScrollSpeed, 'pixels/s, interval:', scrollInterval, 'ms');
+    // Human-like scroll state tracking
+    let scrollMomentum = 1.0; // Simulate momentum
+    let fatigueLevel = 0; // Simulate fatigue over time
+    let lastPauseTime = 0;
+    let consecutiveScrolls = 0;
     
-    // Track absolute scroll position to maintain variable rate
+    console.log('[S4S] Enhanced scroll settings - speed:', currentScrollSpeed, 'pixels/s, interval:', scrollInterval, 'ms');
+    
+    // Track absolute scroll position with momentum
     let targetScrollY = window.scrollY;
     let pauseCounter = 0;
-    const pauseInterval = Math.floor(stealthUtils.getRandomPauseInterval() * 1000); // Random pause interval
+    let pauseInterval = Math.floor(stealthUtils.getRandomPauseInterval() * 1000 * sessionVars.pauseFrequencyMultiplier);
     
     try {
       while (!shouldStopScrolling) {
@@ -1252,46 +1473,98 @@ if (window.s4sContentScriptLoaded) {
           break;
         }
         
-        // Randomly change scroll speed every few iterations (human-like behavior)
-        if (Math.random() < 0.1) { // 10% chance to change speed
-          currentScrollSpeed = stealthUtils.getRandomScrollSpeed();
-          scrollInterval = stealthUtils.randomDelay(800, 1500);
+        // Simulate human fatigue (slower scrolling over time) with session variation
+        const fatigueRate = sessionVars.fatigueRate;
+        fatigueLevel = Math.min(1.0, (Date.now() - startTime) / (300000 * fatigueRate)); // Fatigue over 5 minutes * rate
+        const fatigueMultiplier = 1.0 - (fatigueLevel * 0.3); // Slow down by up to 30%
+        
+        // Randomly change scroll behavior (more human-like variations)
+        if (Math.random() < 0.15) { // 15% chance to change behavior
+          currentScrollSpeed = Math.floor(stealthUtils.getRandomScrollSpeed() * sessionVars.scrollSpeedMultiplier * fatigueMultiplier);
+          scrollInterval = Math.floor(stealthUtils.randomDelay(800, 1800) * sessionVars.queryDelayMultiplier);
           pixelsPerScroll = Math.floor(currentScrollSpeed / (1000 / scrollInterval));
-          console.log('[S4S] Changed scroll speed to:', currentScrollSpeed, 'pixels/s, interval:', scrollInterval, 'ms');
+          
+          // Occasionally change momentum
+          if (Math.random() < 0.3) {
+            scrollMomentum = 0.7 + Math.random() * 0.6; // 0.7 to 1.3
+          }
+          
+          // Reduced logging for stealth
+          if (Math.random() < 0.02) { // Only log 2% of behavior changes
+            console.log('[S4S] Changed scroll behavior - speed:', currentScrollSpeed, 'momentum:', scrollMomentum.toFixed(2));
+          }
         }
         
-        // Random pauses to simulate human reading behavior
+        // Simulate natural pauses based on content and fatigue
         pauseCounter += scrollInterval;
-        if (pauseCounter >= pauseInterval) {
-          const pauseDuration = stealthUtils.getRandomPauseDuration();
-          console.log('[S4S] Taking human-like pause for', pauseDuration, 'ms');
+        if (pauseCounter >= pauseInterval || consecutiveScrolls > 10) {
+          const basePauseDuration = stealthUtils.getRandomPauseDuration();
+          const fatiguePauseBonus = fatigueLevel * 1000; // Longer pauses when tired
+          const consecutivePauseBonus = Math.min(2000, consecutiveScrolls * 100); // Longer pauses after many scrolls
+          const pauseDuration = basePauseDuration + fatiguePauseBonus + consecutivePauseBonus;
+          
+          // Reduced logging for stealth
+          if (Math.random() < 0.03) { // Only log 3% of pauses
+            console.log('[S4S] Taking natural pause for', Math.round(pauseDuration), 'ms (fatigue:', fatigueLevel.toFixed(2), ')');
+          }
+          
           await new Promise(resolve => setTimeout(resolve, pauseDuration));
           pauseCounter = 0;
-          // Reset pause interval for next pause
-          pauseInterval = Math.floor(stealthUtils.getRandomPauseInterval() * 1000);
+          consecutiveScrolls = 0;
+          lastPauseTime = Date.now();
+          
+          // Reset pause interval with variation
+          pauseInterval = Math.floor(stealthUtils.getRandomPauseInterval() * 1000 * sessionVars.pauseFrequencyMultiplier);
         }
         
-        // Calculate next target position with variable rate
-        targetScrollY += pixelsPerScroll;
+        // Simulate browsing behavior occasionally
+        if (Math.random() < 0.08) { // 8% chance to simulate browsing
+          await stealthUtils.simulateBrowsingBehavior();
+        }
         
-        // Scroll to absolute position
-        window.scrollTo(0, targetScrollY);
+        // Simulate mouse movements occasionally
+        await stealthUtils.simulateMouseMovement();
+        
+        // Simulate natural interruptions
+        const interruptionOccurred = await stealthUtils.simulateBrowsingInterruption();
+        if (interruptionOccurred) {
+          // Reset some counters after interruption
+          consecutiveScrolls = 0;
+          fatigueLevel = Math.max(0, fatigueLevel - 0.1); // Slight recovery
+        }
+        
+        // Simulate attention patterns
+        const attentionMultiplier = await stealthUtils.simulateAttentionPattern();
+        const adjustedScrollSpeed = Math.floor(currentScrollSpeed * attentionMultiplier);
+        
+        // Calculate next target position with momentum, fatigue, and attention
+        const adjustedPixelsPerScroll = Math.floor(pixelsPerScroll * scrollMomentum * fatigueMultiplier * attentionMultiplier);
+        targetScrollY += adjustedPixelsPerScroll;
+        consecutiveScrolls++;
+        
+        // Smooth scroll with natural easing
+        const currentY = window.scrollY;
+        const distance = targetScrollY - currentY;
+        const scrollStep = Math.max(1, Math.floor(distance * 0.3)); // Natural easing
+        
+        window.scrollTo(0, currentY + scrollStep);
         
         // Reduced logging for stealth
-        if (Math.random() < 0.05) { // Only log 5% of scroll events
-          console.log('[S4S] Scrolled to position:', targetScrollY, 'pixels');
+        if (Math.random() < 0.01) { // Only log 1% of scroll events
+          console.log('[S4S] Scrolled to position:', targetScrollY, 'pixels (momentum:', scrollMomentum.toFixed(2), ')');
         }
         
-        // Wait for the interval with small randomization
-        const actualInterval = scrollInterval + stealthUtils.randomDelay(-50, 50);
+        // Wait with natural variation
+        const baseInterval = scrollInterval * (1 + fatigueLevel * 0.2); // Slower when tired
+        const actualInterval = baseInterval + stealthUtils.randomDelay(-100, 200);
         await new Promise(resolve => setTimeout(resolve, actualInterval));
         
-        // Check for new content every few seconds with randomization
-        if (Date.now() % (4000 + stealthUtils.randomDelay(0, 2000)) < actualInterval) { // Random check interval
+        // Check for new content with natural timing
+        if (Date.now() % (5000 + stealthUtils.randomDelay(0, 3000)) < actualInterval) { // More varied check interval
           let newHeight = document.documentElement.scrollHeight;
           if (newHeight === lastHeight) {
             stuckCount++;
-            if (stuckCount % 5 === 0) { // Only log every 5th stuck count
+            if (stuckCount % 8 === 0) { // Only log every 8th stuck count
               console.log('[S4S] No new content loaded, stuck count:', stuckCount, 'of', maxStuckCount);
             }
             if (stuckCount >= maxStuckCount) {
@@ -1300,7 +1573,10 @@ if (window.s4sContentScriptLoaded) {
             }
           } else {
             stuckCount = 0;
-            console.log('[S4S] New content loaded, height changed from', lastHeight, 'to', newHeight);
+            // Reduced logging for stealth
+            if (Math.random() < 0.1) { // Only log 10% of content loads
+              console.log('[S4S] New content loaded, height changed from', lastHeight, 'to', newHeight);
+            }
           }
           lastHeight = newHeight;
         }
@@ -1313,7 +1589,7 @@ if (window.s4sContentScriptLoaded) {
         clearTimeout(scrollTimeoutId);
         scrollTimeoutId = null;
       }
-      console.log('[S4S] Stealth scroll completed');
+      console.log('[S4S] Enhanced human-like scroll completed');
     }
   }
 

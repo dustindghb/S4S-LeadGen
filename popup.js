@@ -925,9 +925,26 @@ JSON:`;
             console.log(`[S4S] Analyzing post ${i + index + 1}: ${post.name || 'Unknown'}`);
           }
           
-          // Add random delay before each AI request to simulate human thinking
-          const thinkingDelay = Math.floor(Math.random() * 500) + 200; // 200-700ms
-          await new Promise(resolve => setTimeout(resolve, thinkingDelay));
+          // Simulate human decision-making time based on content complexity
+          const contentLength = post.content ? post.content.length : 0;
+          const complexity = contentLength > 500 ? 'complex' : contentLength > 200 ? 'medium' : 'simple';
+          
+          // Use the enhanced decision time simulation
+          await new Promise(resolve => {
+            setTimeout(async () => {
+              // Simulate reading time for the post content
+              if (contentLength > 0) {
+                const readingTime = Math.max(100, contentLength / 2); // 2 characters per ms
+                await new Promise(r => setTimeout(r, Math.min(readingTime, 2000))); // Cap at 2 seconds
+              }
+              
+              // Simulate thinking time based on complexity
+              const thinkingTime = complexity === 'complex' ? 800 : complexity === 'medium' ? 500 : 300;
+              await new Promise(r => setTimeout(r, thinkingTime));
+              
+              resolve();
+            }, Math.floor(Math.random() * 300) + 100); // Initial random delay
+          });
           
           const isHiring = await checkIfPostIsHiring(post);
           
