@@ -1220,39 +1220,84 @@ if (window.s4sContentScriptLoaded) {
     const startTime = Date.now();
     
     // Human-like scroll settings - mimicking HR professional behavior
-    const baseScrollSpeed = 150; // Base speed in pixels per second (slower than before)
-    const scrollInterval = 500; // Update every 500ms for smoother motion
-    const basePixelsPerScroll = Math.floor(baseScrollSpeed / (1000 / scrollInterval));
+    const baseScrollSpeed = { min: 80, max: 250 }; // Variable base speed range
+    const scrollInterval = { min: 300, max: 1200 }; // Variable interval range
+    let currentBaseSpeed = getRandomInRange(baseScrollSpeed.min, baseScrollSpeed.max);
+    let currentInterval = getRandomInRange(scrollInterval.min, scrollInterval.max);
     
-    console.log('[S4S] Human-like scroll settings - base speed:', baseScrollSpeed, 'pixels/sec, interval:', scrollInterval, 'ms');
+    console.log('[S4S] Human-like scroll settings - base speed range:', baseScrollSpeed.min, '-', baseScrollSpeed.max, 'pixels/sec');
     
-    // Track scroll position
+    // Track scroll position and movement patterns
     let targetScrollY = window.scrollY;
     let scrollPhase = 0; // 0: reading, 1: scanning, 2: pausing
-    let phaseTimer = 0;
     let lastPauseTime = 0;
+    let scrollCount = 0;
+    let lastSpeedChange = Date.now();
     
-    // Human behavior patterns
+    // Enhanced human behavior patterns
     const behaviorPatterns = {
-      readingPause: { min: 2000, max: 8000 }, // Pause to "read" posts (2-8 seconds)
-      scanningSpeed: { min: 0.5, max: 1.5 }, // Speed multiplier when scanning
-      readingSpeed: { min: 0.2, max: 0.8 }, // Speed multiplier when reading
-      pauseFrequency: { min: 3, max: 8 }, // Pause every 3-8 scrolls
-      pauseDuration: { min: 1000, max: 4000 }, // Pause duration (1-4 seconds)
-      microPause: { min: 200, max: 800 } // Micro pauses between scrolls (200-800ms)
+      readingPause: { min: 2000, max: 12000 }, // Longer pauses for reading (2-12 seconds)
+      scanningSpeed: { min: 0.3, max: 2.0 }, // Wider speed range when scanning
+      readingSpeed: { min: 0.1, max: 0.6 }, // Even slower when reading
+      pauseFrequency: { min: 2, max: 6 }, // More frequent pauses
+      pauseDuration: { min: 800, max: 6000 }, // Variable pause duration
+      microPause: { min: 150, max: 1200 }, // Longer micro pauses
+      speedChangeInterval: { min: 5000, max: 15000 }, // Change base speed every 5-15 seconds
+      scrollBurst: { min: 3, max: 8 }, // Number of scrolls in a burst
+      burstPause: { min: 1000, max: 3000 } // Pause between bursts
+    };
+    
+    // Mouse wheel simulation patterns
+    const wheelPatterns = {
+      smallScroll: { min: 50, max: 150 }, // Small scroll like mouse wheel
+      mediumScroll: { min: 150, max: 300 }, // Medium scroll
+      largeScroll: { min: 300, max: 600 }, // Large scroll (page down)
+      scrollTypeChance: { small: 0.6, medium: 0.3, large: 0.1 } // Probability of each scroll type
     };
     
     function getRandomInRange(min, max) {
       return Math.random() * (max - min) + min;
     }
     
+    function getRandomScrollType() {
+      const rand = Math.random();
+      if (rand < wheelPatterns.scrollTypeChance.small) {
+        return 'small';
+      } else if (rand < wheelPatterns.scrollTypeChance.small + wheelPatterns.scrollTypeChance.medium) {
+        return 'medium';
+      } else {
+        return 'large';
+      }
+    }
+    
     function shouldPause() {
-      // Pause more frequently when "reading" content
-      const pauseChance = scrollPhase === 0 ? 0.3 : 0.15;
-      return Math.random() < pauseChance;
+      // More complex pause logic
+      const basePauseChance = scrollPhase === 0 ? 0.4 : 0.2; // Higher chance when reading
+      
+      // Increase pause chance after many scrolls
+      const scrollBasedChance = Math.min(0.3, scrollCount * 0.05);
+      
+      // Random variation
+      const randomFactor = getRandomInRange(0.8, 1.2);
+      
+      const finalChance = (basePauseChance + scrollBasedChance) * randomFactor;
+      return Math.random() < finalChance;
+    }
+    
+    function shouldChangeSpeed() {
+      const timeSinceChange = Date.now() - lastSpeedChange;
+      return timeSinceChange > getRandomInRange(behaviorPatterns.speedChangeInterval.min, behaviorPatterns.speedChangeInterval.max);
     }
     
     function getCurrentSpeed() {
+      // Change base speed periodically
+      if (shouldChangeSpeed()) {
+        currentBaseSpeed = getRandomInRange(baseScrollSpeed.min, baseScrollSpeed.max);
+        currentInterval = getRandomInRange(scrollInterval.min, scrollInterval.max);
+        lastSpeedChange = Date.now();
+        console.log('[S4S] Changed base speed to:', Math.round(currentBaseSpeed), 'pixels/sec, interval:', Math.round(currentInterval), 'ms');
+      }
+      
       let speedMultiplier = 1.0;
       
       // Vary speed based on current phase
@@ -1262,22 +1307,67 @@ if (window.s4sContentScriptLoaded) {
         speedMultiplier = getRandomInRange(behaviorPatterns.scanningSpeed.min, behaviorPatterns.scanningSpeed.max);
       }
       
-      // Add some natural variation
-      speedMultiplier *= getRandomInRange(0.8, 1.2);
+      // Add natural variation with more randomness
+      speedMultiplier *= getRandomInRange(0.6, 1.4);
       
-      return Math.floor(basePixelsPerScroll * speedMultiplier);
+      // Calculate pixels per scroll based on current interval
+      const pixelsPerScroll = Math.floor(currentBaseSpeed / (1000 / currentInterval));
+      
+      return Math.floor(pixelsPerScroll * speedMultiplier);
+    }
+    
+    function getScrollDistance() {
+      const scrollType = getRandomScrollType();
+      let distance;
+      
+      switch (scrollType) {
+        case 'small':
+          distance = getRandomInRange(wheelPatterns.smallScroll.min, wheelPatterns.smallScroll.max);
+          break;
+        case 'medium':
+          distance = getRandomInRange(wheelPatterns.mediumScroll.min, wheelPatterns.mediumScroll.max);
+          break;
+        case 'large':
+          distance = getRandomInRange(wheelPatterns.largeScroll.min, wheelPatterns.largeScroll.max);
+          break;
+        default:
+          distance = getRandomInRange(100, 200);
+      }
+      
+      // Add some variation based on phase
+      if (scrollPhase === 0) { // Reading - smaller scrolls
+        distance *= getRandomInRange(0.5, 1.0);
+      } else { // Scanning - larger scrolls
+        distance *= getRandomInRange(1.0, 1.5);
+      }
+      
+      return Math.floor(distance);
     }
     
     function getScrollDelay() {
-      // Base delay with micro-pauses
-      let delay = scrollInterval;
+      // Base delay with more variation
+      let delay = currentInterval;
       
-      // Add micro-pauses occasionally
-      if (Math.random() < 0.2) { // 20% chance
+      // Add micro-pauses with higher frequency
+      if (Math.random() < 0.3) { // 30% chance
         delay += getRandomInRange(behaviorPatterns.microPause.min, behaviorPatterns.microPause.max);
       }
       
-      return delay;
+      // Occasionally add longer pauses
+      if (Math.random() < 0.1) { // 10% chance
+        delay += getRandomInRange(500, 1500);
+      }
+      
+      return Math.floor(delay);
+    }
+    
+    function shouldDoScrollBurst() {
+      // Do burst scrolling occasionally (like rapid mouse wheel)
+      return Math.random() < 0.15; // 15% chance
+    }
+    
+    function getBurstScrolls() {
+      return Math.floor(getRandomInRange(behaviorPatterns.scrollBurst.min, behaviorPatterns.scrollBurst.max));
     }
     
     try {
@@ -1316,24 +1406,52 @@ if (window.s4sContentScriptLoaded) {
           
           // After a pause, we're likely in reading mode
           scrollPhase = 0;
+          scrollCount = 0; // Reset scroll count after pause
         }
         
-        // Calculate scroll distance with human-like variation
-        const pixelsToScroll = getCurrentSpeed();
-        targetScrollY += pixelsToScroll;
-        
-        // Smooth scroll to position (simulate human mouse wheel behavior)
-        const currentY = window.scrollY;
-        const distance = targetScrollY - currentY;
-        
-        if (Math.abs(distance) > 5) { // Only scroll if there's meaningful distance
-          // Use smooth scrolling for more natural movement
-          window.scrollTo({
-            top: targetScrollY,
-            behavior: 'smooth'
-          });
+        // Check for scroll burst (rapid scrolling like mouse wheel)
+        if (shouldDoScrollBurst()) {
+          const burstCount = getBurstScrolls();
+          console.log('[S4S] Starting scroll burst of', burstCount, 'scrolls');
           
-          console.log('[S4S] Scrolled', pixelsToScroll, 'pixels to', targetScrollY, 'phase:', scrollPhase === 0 ? 'reading' : 'scanning');
+          for (let i = 0; i < burstCount && !shouldStopScrolling; i++) {
+            const burstDistance = getScrollDistance();
+            targetScrollY += burstDistance;
+            
+            // Quick scroll without smooth behavior for burst
+            window.scrollTo(0, targetScrollY);
+            
+            console.log('[S4S] Burst scroll', i + 1, '/', burstCount, ':', burstDistance, 'pixels');
+            
+            // Short delay between burst scrolls
+            await new Promise(resolve => setTimeout(resolve, getRandomInRange(50, 200)));
+            scrollCount++;
+          }
+          
+          // Pause after burst
+          const burstPause = getRandomInRange(behaviorPatterns.burstPause.min, behaviorPatterns.burstPause.max);
+          console.log('[S4S] Pausing after burst for', Math.round(burstPause), 'ms');
+          await new Promise(resolve => setTimeout(resolve, burstPause));
+          
+        } else {
+          // Normal single scroll
+          const scrollDistance = getScrollDistance();
+          targetScrollY += scrollDistance;
+          
+          // Smooth scroll to position (simulate human mouse wheel behavior)
+          const currentY = window.scrollY;
+          const distance = targetScrollY - currentY;
+          
+          if (Math.abs(distance) > 5) { // Only scroll if there's meaningful distance
+            // Use smooth scrolling for more natural movement
+            window.scrollTo({
+              top: targetScrollY,
+              behavior: 'smooth'
+            });
+            
+            console.log('[S4S] Scrolled', scrollDistance, 'pixels to', targetScrollY, 'phase:', scrollPhase === 0 ? 'reading' : 'scanning');
+            scrollCount++;
+          }
         }
         
         // Wait with variable delay
