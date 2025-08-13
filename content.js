@@ -1209,7 +1209,7 @@ if (window.s4sContentScriptLoaded) {
   let scrollTimeoutId = null;
 
   async function smoothScrollFeed() {
-    console.log('[S4S] Starting continuous 5px/s scroll');
+    console.log('[S4S] Starting human-like scrolling simulation');
     isScrolling = true;
     shouldStopScrolling = false;
     
@@ -1219,15 +1219,66 @@ if (window.s4sContentScriptLoaded) {
     const maxScrollTime = 300000; // 5 minutes maximum scroll time
     const startTime = Date.now();
     
-    // Constant rate scroll settings
-    const pixelsPerSecond = 400; // Fast scroll rate: 400 pixels per second
-    const scrollInterval = 1000; // Update every 1 second
-    const pixelsPerScroll = Math.floor(pixelsPerSecond / (1000 / scrollInterval)); // 400 pixels per second
+    // Human-like scroll settings - mimicking HR professional behavior
+    const baseScrollSpeed = 150; // Base speed in pixels per second (slower than before)
+    const scrollInterval = 500; // Update every 500ms for smoother motion
+    const basePixelsPerScroll = Math.floor(baseScrollSpeed / (1000 / scrollInterval));
     
-    console.log('[S4S] Scroll settings - pixels per second:', pixelsPerSecond, 'interval:', scrollInterval, 'ms, pixels per scroll:', pixelsPerScroll);
+    console.log('[S4S] Human-like scroll settings - base speed:', baseScrollSpeed, 'pixels/sec, interval:', scrollInterval, 'ms');
     
-    // Track absolute scroll position to maintain constant rate
+    // Track scroll position
     let targetScrollY = window.scrollY;
+    let scrollPhase = 0; // 0: reading, 1: scanning, 2: pausing
+    let phaseTimer = 0;
+    let lastPauseTime = 0;
+    
+    // Human behavior patterns
+    const behaviorPatterns = {
+      readingPause: { min: 2000, max: 8000 }, // Pause to "read" posts (2-8 seconds)
+      scanningSpeed: { min: 0.5, max: 1.5 }, // Speed multiplier when scanning
+      readingSpeed: { min: 0.2, max: 0.8 }, // Speed multiplier when reading
+      pauseFrequency: { min: 3, max: 8 }, // Pause every 3-8 scrolls
+      pauseDuration: { min: 1000, max: 4000 }, // Pause duration (1-4 seconds)
+      microPause: { min: 200, max: 800 } // Micro pauses between scrolls (200-800ms)
+    };
+    
+    function getRandomInRange(min, max) {
+      return Math.random() * (max - min) + min;
+    }
+    
+    function shouldPause() {
+      // Pause more frequently when "reading" content
+      const pauseChance = scrollPhase === 0 ? 0.3 : 0.15;
+      return Math.random() < pauseChance;
+    }
+    
+    function getCurrentSpeed() {
+      let speedMultiplier = 1.0;
+      
+      // Vary speed based on current phase
+      if (scrollPhase === 0) { // Reading phase
+        speedMultiplier = getRandomInRange(behaviorPatterns.readingSpeed.min, behaviorPatterns.readingSpeed.max);
+      } else if (scrollPhase === 1) { // Scanning phase
+        speedMultiplier = getRandomInRange(behaviorPatterns.scanningSpeed.min, behaviorPatterns.scanningSpeed.max);
+      }
+      
+      // Add some natural variation
+      speedMultiplier *= getRandomInRange(0.8, 1.2);
+      
+      return Math.floor(basePixelsPerScroll * speedMultiplier);
+    }
+    
+    function getScrollDelay() {
+      // Base delay with micro-pauses
+      let delay = scrollInterval;
+      
+      // Add micro-pauses occasionally
+      if (Math.random() < 0.2) { // 20% chance
+        delay += getRandomInRange(behaviorPatterns.microPause.min, behaviorPatterns.microPause.max);
+      }
+      
+      return delay;
+    }
     
     try {
       while (!shouldStopScrolling) {
@@ -1243,16 +1294,51 @@ if (window.s4sContentScriptLoaded) {
           break;
         }
         
-        // Calculate next target position (constant rate)
-        targetScrollY += pixelsPerScroll;
+        // Determine current behavior phase
+        const timeSinceLastPause = Date.now() - lastPauseTime;
         
-        // Scroll to absolute position
-        window.scrollTo(0, targetScrollY);
+        // Switch between reading and scanning phases
+        if (scrollPhase === 0 && timeSinceLastPause > 15000) { // Reading for 15+ seconds
+          scrollPhase = 1; // Switch to scanning
+          console.log('[S4S] Switching to scanning phase');
+        } else if (scrollPhase === 1 && timeSinceLastPause > 10000) { // Scanning for 10+ seconds
+          scrollPhase = 0; // Switch back to reading
+          console.log('[S4S] Switching to reading phase');
+        }
         
-        console.log('[S4S] Scrolled to position:', targetScrollY, 'pixels, shouldStopScrolling:', shouldStopScrolling);
+        // Decide if we should pause (simulating reading a post)
+        if (shouldPause() && timeSinceLastPause > 3000) { // Don't pause too frequently
+          const pauseDuration = getRandomInRange(behaviorPatterns.pauseDuration.min, behaviorPatterns.pauseDuration.max);
+          console.log('[S4S] Pausing to "read" for', Math.round(pauseDuration), 'ms');
+          
+          await new Promise(resolve => setTimeout(resolve, pauseDuration));
+          lastPauseTime = Date.now();
+          
+          // After a pause, we're likely in reading mode
+          scrollPhase = 0;
+        }
         
-        // Wait for the interval
-        await new Promise(resolve => setTimeout(resolve, scrollInterval));
+        // Calculate scroll distance with human-like variation
+        const pixelsToScroll = getCurrentSpeed();
+        targetScrollY += pixelsToScroll;
+        
+        // Smooth scroll to position (simulate human mouse wheel behavior)
+        const currentY = window.scrollY;
+        const distance = targetScrollY - currentY;
+        
+        if (Math.abs(distance) > 5) { // Only scroll if there's meaningful distance
+          // Use smooth scrolling for more natural movement
+          window.scrollTo({
+            top: targetScrollY,
+            behavior: 'smooth'
+          });
+          
+          console.log('[S4S] Scrolled', pixelsToScroll, 'pixels to', targetScrollY, 'phase:', scrollPhase === 0 ? 'reading' : 'scanning');
+        }
+        
+        // Wait with variable delay
+        const delay = getScrollDelay();
+        await new Promise(resolve => setTimeout(resolve, delay));
         
         // Check for new content every few seconds
         if (Date.now() % 5000 < scrollInterval) { // Check every ~5 seconds
@@ -1279,7 +1365,7 @@ if (window.s4sContentScriptLoaded) {
         clearTimeout(scrollTimeoutId);
         scrollTimeoutId = null;
       }
-      console.log('[S4S] Scroll completed');
+      console.log('[S4S] Human-like scroll completed');
     }
   }
 
