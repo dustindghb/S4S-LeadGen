@@ -1,15 +1,25 @@
-console.log('[S4S] Content script loaded');
+// Anti-detection: Disable console logging in production
+const DEBUG_MODE = false; // Set to false to disable all console logging
 
-// Prevent multiple instances
-if (window.s4sContentScriptLoaded) {
-  console.log('[S4S] Content script already loaded, skipping');
-} else {
-  window.s4sContentScriptLoaded = true;
-  
-  // Add a small delay to ensure the page is fully loaded
-  setTimeout(() => {
-    console.log('[S4S] Content script initialized and ready');
-  }, 500);
+function safeLog(...args) {
+  if (DEBUG_MODE) {
+    console.log(...args);
+  }
+}
+
+// Only keep essential loading log
+safeLog('[S4S] Content script loaded');
+
+  // Prevent multiple instances
+  if (window.s4sContentScriptLoaded) {
+    // Content script already loaded, skipping
+  } else {
+    window.s4sContentScriptLoaded = true;
+    
+    // Add a small delay to ensure the page is fully loaded
+    setTimeout(() => {
+      // Content script initialized and ready
+    }, 500);
 
   // Add timeout wrapper for long-running operations
   function withTimeout(promise, timeoutMs = 30000) {
@@ -19,6 +29,35 @@ if (window.s4sContentScriptLoaded) {
         setTimeout(() => reject(new Error('Operation timed out')), timeoutMs)
       )
     ]);
+  }
+
+  // Anti-detection: Random delay function
+  function randomDelay(min = 100, max = 500) {
+    return new Promise(resolve => 
+      setTimeout(resolve, Math.random() * (max - min) + min)
+    );
+  }
+
+  // Anti-detection: Throttled DOM queries
+  let lastDomQuery = 0;
+  const DOM_QUERY_THROTTLE = 50; // Minimum ms between DOM queries
+
+  async function throttledQuerySelector(element, selector) {
+    const now = Date.now();
+    if (now - lastDomQuery < DOM_QUERY_THROTTLE) {
+      await randomDelay(DOM_QUERY_THROTTLE - (now - lastDomQuery));
+    }
+    lastDomQuery = Date.now();
+    return element.querySelector(selector);
+  }
+
+  async function throttledQuerySelectorAll(element, selector) {
+    const now = Date.now();
+    if (now - lastDomQuery < DOM_QUERY_THROTTLE) {
+      await randomDelay(DOM_QUERY_THROTTLE - (now - lastDomQuery));
+    }
+    lastDomQuery = Date.now();
+    return element.querySelectorAll(selector);
   }
 
   async function extractPosts() {
@@ -65,14 +104,11 @@ if (window.s4sContentScriptLoaded) {
         
         if (authorNameElement && authorNameElement.innerText.trim()) {
           name = authorNameElement.innerText.trim();
-          console.log(`[S4S] Post ${index + 1} found author name: "${name}"`);
           
           // Find the closest container that should hold the profile link
           nameContainer = authorNameElement.closest('.feed-shared-actor__container, .update-components-actor, [class*="actor"]');
           
           if (nameContainer) {
-            console.log(`[S4S] Post ${index + 1} found name container:`, nameContainer);
-            
             // Look for the profile link within this specific container
             const profileSelectors = [
               'a[data-control-name="actor_profile"]',
@@ -84,7 +120,6 @@ if (window.s4sContentScriptLoaded) {
               const profileLink = nameContainer.querySelector(profileSelector);
               if (profileLink && profileLink.href) {
                 linkedinUrl = profileLink.href;
-                console.log(`[S4S] Post ${index + 1} found author profile URL: ${linkedinUrl} for author: ${name}`);
                 break;
               }
             }
@@ -93,7 +128,6 @@ if (window.s4sContentScriptLoaded) {
         
         // If we didn't find the specific author name, try broader search
         if (!name || !linkedinUrl) {
-          console.log(`[S4S] Post ${index + 1} trying broader search - name: "${name}", profile: "${linkedinUrl}"`);
           
           // Try to find the main actor/author container
           const actorContainers = [
@@ -106,7 +140,6 @@ if (window.s4sContentScriptLoaded) {
           for (const containerSelector of actorContainers) {
             const container = post.querySelector(containerSelector);
             if (container) {
-              console.log(`[S4S] Post ${index + 1} found actor container:`, container);
               
               // Look for the author's name within this container
               const nameSelectors = [
@@ -129,7 +162,6 @@ if (window.s4sContentScriptLoaded) {
                       !candidateName.includes('Connect')) {
                     name = candidateName;
                     nameContainer = container;
-                    console.log(`[S4S] Post ${index + 1} found author name: "${name}" using selector: ${nameSelector}`);
                     break;
                   }
                 }
@@ -147,7 +179,6 @@ if (window.s4sContentScriptLoaded) {
                   const profileLink = container.querySelector(profileSelector);
                   if (profileLink && profileLink.href) {
                     linkedinUrl = profileLink.href;
-                    console.log(`[S4S] Post ${index + 1} found author profile URL: ${linkedinUrl} for author: ${name}`);
                     break;
                   }
                 }
@@ -159,14 +190,11 @@ if (window.s4sContentScriptLoaded) {
         
         // Fallback: if we didn't find both name and profile, try broader search
         if (!name || !linkedinUrl) {
-          console.log(`[S4S] Post ${index + 1} fallback search - name: "${name}", profile: "${linkedinUrl}"`);
-          
           // Try to find any profile link in the post
           if (!linkedinUrl) {
             const anyProfile = post.querySelector('a[href*="/in/"]');
             if (anyProfile && anyProfile.href) {
               linkedinUrl = anyProfile.href;
-              console.log(`[S4S] Post ${index + 1} found fallback profile URL: ${linkedinUrl}`);
             }
           }
           
@@ -177,17 +205,9 @@ if (window.s4sContentScriptLoaded) {
               const candidateName = anyName.innerText.trim();
               if (candidateName.length > 1 && candidateName.length < 50) {
                 name = candidateName;
-                console.log(`[S4S] Post ${index + 1} found fallback name: "${name}"`);
               }
             }
           }
-        }
-        
-        if (!name) {
-          console.log(`[S4S] Post ${index + 1} no author name found`);
-        }
-        if (!linkedinUrl) {
-          console.log(`[S4S] Post ${index + 1} no LinkedIn profile URL found for author: ${name}`);
         }
         
         // Extract professional information - focused on headline
@@ -201,7 +221,7 @@ if (window.s4sContentScriptLoaded) {
         const exactDate = dateInfo.exactDate;
         
         if (index < 3) {
-          console.log(`[S4S] Post ${index + 1} extracted data:`, {
+          safeLog(`[S4S] Post ${index + 1} extracted data:`, {
             age: extractedAge,
             postDate: postDate,
             exactDate: exactDate
@@ -220,20 +240,20 @@ if (window.s4sContentScriptLoaded) {
         // Also check for connection degree in headline elements
         let foundConnectionDegree = '';
         
-        console.log(`[S4S] Post ${index + 1} headline extraction - name: "${name}"`);
+        safeLog(`[S4S] Post ${index + 1} headline extraction - name: "${name}"`);
         
         for (const selector of headlineSelectors) {
           const headlineElem = post.querySelector(selector);
           if (headlineElem && headlineElem.innerText.trim()) {
             const text = headlineElem.innerText.trim();
-            console.log(`[S4S] Post ${index + 1} found headline candidate: "${text}" using selector: ${selector}`);
+            safeLog(`[S4S] Post ${index + 1} found headline candidate: "${text}" using selector: ${selector}`);
             
             // Check for connection degree in this text
             if (!foundConnectionDegree) {
               const connectionMatch = text.match(/\b(1st|2nd|3rd\+?)\b/i);
               if (connectionMatch) {
                 foundConnectionDegree = connectionMatch[1];
-                console.log(`[S4S] Found connection degree in headline element: ${foundConnectionDegree}`);
+                safeLog(`[S4S] Found connection degree in headline element: ${foundConnectionDegree}`);
               }
             }
             
@@ -243,17 +263,17 @@ if (window.s4sContentScriptLoaded) {
                 text.length > 2 && 
                 text.length < 200) {
               headline = text;
-              console.log(`[S4S] Post ${index + 1} selected headline: "${headline}"`);
+              safeLog(`[S4S] Post ${index + 1} selected headline: "${headline}"`);
               break;
             } else {
-              console.log(`[S4S] Post ${index + 1} rejected headline candidate: "${text}" (reason: ${text === name ? 'same as name' : text.length <= 2 ? 'too short' : 'too long'})`);
+              safeLog(`[S4S] Post ${index + 1} rejected headline candidate: "${text}" (reason: ${text === name ? 'same as name' : text.length <= 2 ? 'too short' : 'too long'})`);
             }
           }
         }
         
         // Fallback headline extraction
         if (!headline) {
-          console.log(`[S4S] Post ${index + 1} trying fallback headline extraction`);
+          safeLog(`[S4S] Post ${index + 1} trying fallback headline extraction`);
           const fallbackSelectors = [
             '.update-components-actor__description',
             '.feed-shared-actor__subline',
@@ -266,14 +286,14 @@ if (window.s4sContentScriptLoaded) {
             const headlineElem = post.querySelector(selector);
             if (headlineElem && headlineElem.innerText.trim()) {
               const text = headlineElem.innerText.trim();
-              console.log(`[S4S] Post ${index + 1} fallback headline candidate: "${text}" using selector: ${selector}`);
+              safeLog(`[S4S] Post ${index + 1} fallback headline candidate: "${text}" using selector: ${selector}`);
               
               if (text && 
                   text !== name && 
                   text.length > 2 && 
                   text.length < 200) {
                 headline = text;
-                console.log(`[S4S] Post ${index + 1} selected fallback headline: "${headline}"`);
+                safeLog(`[S4S] Post ${index + 1} selected fallback headline: "${headline}"`);
                 break;
               }
             }
@@ -284,9 +304,9 @@ if (window.s4sContentScriptLoaded) {
           headline = headline
             .replace(/\s+•\s+.*$/, '')
             .trim();
-          console.log(`[S4S] Post ${index + 1} final cleaned headline: "${headline}"`);
+          safeLog(`[S4S] Post ${index + 1} final cleaned headline: "${headline}"`);
         } else {
-          console.log(`[S4S] Post ${index + 1} no headline found`);
+          safeLog(`[S4S] Post ${index + 1} no headline found`);
         }
         
         // Extract content - including reposted content
@@ -314,11 +334,11 @@ if (window.s4sContentScriptLoaded) {
                 !text.includes('2nd') && 
                 !text.includes('3rd+')) {
               content = cleanTextContent(text);
-              console.log(`[S4S] Post ${index + 1} found main content: "${content.substring(0, 100)}..."`);
+              safeLog(`[S4S] Post ${index + 1} found main content: "${content.substring(0, 100)}..."`);
               break;
             } else {
               contentFilteredReason = `Filtered out by length/keywords (length: ${text.length}, text: '${text.slice(0, 40)}...')`;
-              console.log(`[S4S] Post ${index + 1} content found but filtered:`, contentFilteredReason);
+              safeLog(`[S4S] Post ${index + 1} content found but filtered:`, contentFilteredReason);
             }
           }
         }
@@ -328,12 +348,12 @@ if (window.s4sContentScriptLoaded) {
         
         // If main content is empty or very short, look for reposted content
         if (!content || content.length < 50) {
-          console.log(`[S4S] Post ${index + 1} main content is empty or short, looking for reposted content...`);
+          safeLog(`[S4S] Post ${index + 1} main content is empty or short, looking for reposted content...`);
           
           // If we detected a repost, use the original content
           if (repostInfo.isRepost && repostInfo.originalContent) {
             content = repostInfo.originalContent;
-            console.log(`[S4S] Post ${index + 1} using detected repost content: "${content.substring(0, 100)}..."`);
+            safeLog(`[S4S] Post ${index + 1} using detected repost content: "${content.substring(0, 100)}..."`);
           } else {
             // Look for reposted content - LinkedIn reposts are often in different containers
             const repostSelectors = [
@@ -375,7 +395,7 @@ if (window.s4sContentScriptLoaded) {
                   const cleanedText = cleanTextContent(text);
                   if (cleanedText.length > content.length) {
                     content = cleanedText;
-                    console.log(`[S4S] Post ${index + 1} found reposted content: "${content.substring(0, 100)}..." using selector: ${selector}`);
+                    safeLog(`[S4S] Post ${index + 1} found reposted content: "${content.substring(0, 100)}..." using selector: ${selector}`);
                     break;
                   }
                 }
@@ -392,12 +412,12 @@ if (window.s4sContentScriptLoaded) {
           
           // Combine them with clear separation
           content = `${commentary}\n\n--- Original Post ---\n${originalContent}`;
-          console.log(`[S4S] Post ${index + 1} combined repost commentary with original content`);
+          safeLog(`[S4S] Post ${index + 1} combined repost commentary with original content`);
         }
         
         // If still no content, try to find any meaningful text in the post
         if (!content || content.length < 20) {
-          console.log(`[S4S] Post ${index + 1} still no content, trying broader search...`);
+          safeLog(`[S4S] Post ${index + 1} still no content, trying broader search...`);
           
           // Look for any text content that might be meaningful
           const allTextElements = post.querySelectorAll('div, span, p');
@@ -424,15 +444,15 @@ if (window.s4sContentScriptLoaded) {
           
           if (bestContent && bestContent.length > content.length) {
             content = bestContent;
-            console.log(`[S4S] Post ${index + 1} found content via broad search: "${content.substring(0, 100)}..."`);
+            safeLog(`[S4S] Post ${index + 1} found content via broad search: "${content.substring(0, 100)}..."`);
           }
         }
         
         // Debug log if content is still empty after all selectors
         if (!content) {
-          console.log(`[S4S] Post ${index + 1} content is empty after all selectors.`, contentFilteredReason, 'Post outerHTML:', post.outerHTML.slice(0, 1000));
+          safeLog(`[S4S] Post ${index + 1} content is empty after all selectors.`, contentFilteredReason, 'Post outerHTML:', post.outerHTML.slice(0, 1000));
         } else {
-          console.log(`[S4S] Post ${index + 1} final content length: ${content.length} characters`);
+          safeLog(`[S4S] Post ${index + 1} final content length: ${content.length} characters`);
         }
         
         // Clean headline text as well
@@ -446,16 +466,16 @@ if (window.s4sContentScriptLoaded) {
         // If not found by dedicated extraction, use the one found in headline elements
         if (!connectionDegree && foundConnectionDegree) {
           connectionDegree = foundConnectionDegree;
-          console.log(`[S4S] Using connection degree from headline element: ${connectionDegree}`);
+          safeLog(`[S4S] Using connection degree from headline element: ${connectionDegree}`);
         }
         
         // Default to "3rd" if no connection degree found
         if (!connectionDegree) {
           connectionDegree = '3rd';
-          console.log(`[S4S] No connection degree found, defaulting to "3rd"`);
+          safeLog(`[S4S] No connection degree found, defaulting to "3rd"`);
         }
         
-        console.log(`[S4S] Post ${index + 1} final connection degree: "${connectionDegree}"`);
+        safeLog(`[S4S] Post ${index + 1} final connection degree: "${connectionDegree}"`);
         
         // Only add posts that have meaningful content
         if (name && (content || headline)) {
@@ -513,7 +533,7 @@ if (window.s4sContentScriptLoaded) {
     for (const indicator of repostIndicators) {
       if (mainContent.includes(indicator)) {
         isRepost = true;
-        console.log(`[S4S] Detected repost indicator: "${indicator}"`);
+        safeLog(`[S4S] Detected repost indicator: "${indicator}"`);
         break;
       }
     }
@@ -530,7 +550,7 @@ if (window.s4sContentScriptLoaded) {
     for (const selector of repostStructureSelectors) {
       if (post.querySelector(selector)) {
         isRepost = true;
-        console.log(`[S4S] Detected repost structure: ${selector}`);
+        safeLog(`[S4S] Detected repost structure: ${selector}`);
         break;
       }
     }
@@ -585,7 +605,7 @@ if (window.s4sContentScriptLoaded) {
     
     if (bestContent) {
       originalContent = bestContent;
-      console.log(`[S4S] Extracted original repost content: "${originalContent.substring(0, 100)}..."`);
+      safeLog(`[S4S] Extracted original repost content: "${originalContent.substring(0, 100)}..."`);
     }
     
     return { isRepost, originalContent };
@@ -665,7 +685,7 @@ if (window.s4sContentScriptLoaded) {
       if (element) {
         const degree = getConnectionDegree(element.textContent);
         if (degree) {
-          console.log(`[S4S] Found connection degree "${degree}" using selector: ${selector}`);
+          safeLog(`[S4S] Found connection degree "${degree}" using selector: ${selector}`);
           return degree;
         }
       }
@@ -674,18 +694,18 @@ if (window.s4sContentScriptLoaded) {
     // Fallback: search the entire post element
     const fallbackDegree = getConnectionDegree(postElement);
     if (fallbackDegree) {
-      console.log(`[S4S] Found connection degree "${fallbackDegree}" using fallback search`);
+      safeLog(`[S4S] Found connection degree "${fallbackDegree}" using fallback search`);
       return fallbackDegree;
     }
     
-    console.log('[S4S] No connection degree found');
+    safeLog('[S4S] No connection degree found');
     return null;
   }
 
   // Function to extract connection degree information (legacy wrapper)
   function extractConnectionDegree(post) {
     try {
-      console.log('[S4S] Starting connection degree extraction for post');
+      safeLog('[S4S] Starting connection degree extraction for post');
       const result = getConnectionDegreeFromDOM(post);
       return result || '3rd'; // Return "3rd" instead of empty string for backward compatibility
     } catch (error) {
@@ -788,7 +808,7 @@ if (window.s4sContentScriptLoaded) {
     let postDate = null;
     let postDateString = '';
     
-    console.log(`[S4S] Starting date extraction for post ${index + 1}`);
+    safeLog(`[S4S] Starting date extraction for post ${index + 1}`);
     
     const timeSelectors = [
       'time',
@@ -805,16 +825,16 @@ if (window.s4sContentScriptLoaded) {
     // First, try to get the actual timestamp from HTML attributes
     for (const selector of timeSelectors) {
       const timeElems = post.querySelectorAll(selector);
-      console.log(`[S4S] Post ${index + 1} found ${timeElems.length} elements with selector: ${selector}`);
+      safeLog(`[S4S] Post ${index + 1} found ${timeElems.length} elements with selector: ${selector}`);
       
       for (const timeElem of timeElems) {
         // Check for datetime attribute (most reliable)
         const datetime = timeElem.getAttribute('datetime');
         if (datetime) {
-          console.log(`[S4S] Post ${index + 1} found datetime:`, datetime);
+          safeLog(`[S4S] Post ${index + 1} found datetime:`, datetime);
           postDate = new Date(datetime);
           postDateString = postDate.toISOString().split('T')[0]; // YYYY-MM-DD format
-          console.log(`[S4S] Post ${index + 1} exact date from datetime:`, postDateString);
+          safeLog(`[S4S] Post ${index + 1} exact date from datetime:`, postDateString);
           break;
         }
         
@@ -823,26 +843,26 @@ if (window.s4sContentScriptLoaded) {
                          timeElem.getAttribute('data-time') ||
                          timeElem.getAttribute('data-date');
         if (timestamp) {
-          console.log(`[S4S] Post ${index + 1} found timestamp:`, timestamp);
+          safeLog(`[S4S] Post ${index + 1} found timestamp:`, timestamp);
           postDate = new Date(parseInt(timestamp) * 1000); // Convert Unix timestamp
           postDateString = postDate.toISOString().split('T')[0];
-          console.log(`[S4S] Post ${index + 1} exact date from timestamp:`, postDateString);
+          safeLog(`[S4S] Post ${index + 1} exact date from timestamp:`, postDateString);
           break;
         }
         
         // Check for title attribute with full date
         const title = timeElem.getAttribute('title');
         if (title && title.includes(',')) {
-          console.log(`[S4S] Post ${index + 1} found title:`, title);
+          safeLog(`[S4S] Post ${index + 1} found title:`, title);
           try {
             postDate = new Date(title);
             if (!isNaN(postDate)) {
               postDateString = postDate.toISOString().split('T')[0];
-              console.log(`[S4S] Post ${index + 1} exact date from title:`, postDateString);
+              safeLog(`[S4S] Post ${index + 1} exact date from title:`, postDateString);
               break;
             }
           } catch (e) {
-            console.log(`[S4S] Post ${index + 1} failed to parse title date:`, e);
+            safeLog(`[S4S] Post ${index + 1} failed to parse title date:`, e);
           }
         }
       }
@@ -851,32 +871,32 @@ if (window.s4sContentScriptLoaded) {
     
     // If we couldn't get exact date, extract age and calculate approximate date
     if (!postDate) {
-      console.log(`[S4S] No exact date found, calculating from age for post ${index + 1}`);
+      safeLog(`[S4S] No exact date found, calculating from age for post ${index + 1}`);
       
       for (const selector of timeSelectors) {
         const timeElems = post.querySelectorAll(selector);
         for (const timeElem of timeElems) {
           if (timeElem && timeElem.innerText.trim()) {
             const text = timeElem.innerText.trim();
-            console.log(`[S4S] Post ${index + 1} time text: "${text}"`);
+            safeLog(`[S4S] Post ${index + 1} time text: "${text}"`);
             
             // Extract age as before
             if (text.match(/\d+[hmdw]/) || text.includes('ago') || text.includes('min') || text.includes('hour') || text.includes('day') || text.includes('week') || text.includes('month') || text.includes('year')) {
-              console.log(`[S4S] Post ${index + 1} text matches time pattern: "${text}"`);
+              safeLog(`[S4S] Post ${index + 1} text matches time pattern: "${text}"`);
               
               let timeMatch = text.match(/(\d+)\s*(min|minute|hour|day|week|month|year)s?/i);
               if (!timeMatch) {
                 timeMatch = text.match(/(\d+[hmdw])/);
               }
               
-              console.log(`[S4S] Post ${index + 1} timeMatch:`, timeMatch);
+              safeLog(`[S4S] Post ${index + 1} timeMatch:`, timeMatch);
               
               if (timeMatch) {
                 const value = parseInt(timeMatch[1]);
                 const unit = timeMatch[2] ? timeMatch[2].toLowerCase() : timeMatch[1].slice(-1);
                 
                 age = value + (timeMatch[2] ? timeMatch[2].charAt(0) : unit);
-                console.log(`[S4S] Post ${index + 1} extracted age: "${age}" (value: ${value}, unit: ${unit})`);
+                safeLog(`[S4S] Post ${index + 1} extracted age: "${age}" (value: ${value}, unit: ${unit})`);
                 
                 // Calculate approximate date
                 const now = new Date();
@@ -904,14 +924,14 @@ if (window.s4sContentScriptLoaded) {
                 
                 if (postDate) {
                   postDateString = postDate.toISOString().split('T')[0];
-                  console.log(`[S4S] Post ${index + 1} calculated date:`, postDateString, 'from age:', age);
+                  safeLog(`[S4S] Post ${index + 1} calculated date:`, postDateString, 'from age:', age);
                 }
                 break;
               } else {
-                console.log(`[S4S] Post ${index + 1} no time match found for text: "${text}"`);
+                safeLog(`[S4S] Post ${index + 1} no time match found for text: "${text}"`);
               }
             } else {
-              console.log(`[S4S] Post ${index + 1} text does not match time pattern: "${text}"`);
+              safeLog(`[S4S] Post ${index + 1} text does not match time pattern: "${text}"`);
             }
           }
         }
@@ -942,7 +962,7 @@ if (window.s4sContentScriptLoaded) {
       exactDate: !!postDate // boolean indicating if we found exact date vs calculated
     };
     
-    console.log(`[S4S] Post ${index + 1} final result:`, result);
+    safeLog(`[S4S] Post ${index + 1} final result:`, result);
     
     return result;
   }
@@ -959,7 +979,7 @@ if (window.s4sContentScriptLoaded) {
       
       // Debug logging for first few posts
       if (index < 3) {
-        console.log(`[S4S] Analyzing post ${index + 1} for URL extraction`);
+        safeLog(`[S4S] Analyzing post ${index + 1} for URL extraction`);
       }
       
       // Method 1: Look for direct post links (most reliable)
@@ -978,7 +998,7 @@ if (window.s4sContentScriptLoaded) {
         if (linkElem && linkElem.href) {
           postUrl = linkElem.href;
           if (index < 3) {
-            console.log(`[S4S] Post ${index + 1} URL found via direct link (${selector}):`, postUrl);
+            safeLog(`[S4S] Post ${index + 1} URL found via direct link (${selector}):`, postUrl);
           }
           break;
         }
@@ -991,7 +1011,7 @@ if (window.s4sContentScriptLoaded) {
           if (timeLink.href && (timeLink.href.includes('/posts/') || timeLink.href.includes('/feed/update/'))) {
             postUrl = timeLink.href;
             if (index < 3) {
-              console.log(`[S4S] Post ${index + 1} URL found via timestamp link:`, postUrl);
+              safeLog(`[S4S] Post ${index + 1} URL found via timestamp link:`, postUrl);
             }
             break;
           }
@@ -1013,7 +1033,7 @@ if (window.s4sContentScriptLoaded) {
                 // Use the correct working LinkedIn post URL format
                 postUrl = `https://www.linkedin.com/feed/update/urn:li:activity:${activityId}/`;
                 if (index < 3) {
-                  console.log(`[S4S] Post ${index + 1} URL constructed from share button URN:`, postUrl);
+                  safeLog(`[S4S] Post ${index + 1} URL constructed from share button URN:`, postUrl);
                 }
                 break;
               }
@@ -1053,7 +1073,7 @@ if (window.s4sContentScriptLoaded) {
               // Use the correct working LinkedIn post URL format
               postUrl = `https://www.linkedin.com/feed/update/urn:li:activity:${activityId}/`;
               if (index < 3) {
-                console.log(`[S4S] Post ${index + 1} URL constructed from URN:`, postUrl);
+                safeLog(`[S4S] Post ${index + 1} URL constructed from URN:`, postUrl);
               }
             }
           }
@@ -1069,7 +1089,7 @@ if (window.s4sContentScriptLoaded) {
           if (href && (href.includes('/posts/') || href.includes('/feed/update/') || href.includes('/activity-'))) {
             postUrl = href;
             if (index < 3) {
-              console.log(`[S4S] Post ${index + 1} URL found via clickable element:`, postUrl);
+              safeLog(`[S4S] Post ${index + 1} URL found via clickable element:`, postUrl);
             }
             break;
           }
@@ -1088,7 +1108,7 @@ if (window.s4sContentScriptLoaded) {
               const activityId = activityMatch[1];
               postUrl = `https://www.linkedin.com/feed/update/urn:li:activity:${activityId}/`;
               if (index < 3) {
-                console.log(`[S4S] Post ${index + 1} URL constructed from activity ID in link:`, postUrl);
+                safeLog(`[S4S] Post ${index + 1} URL constructed from activity ID in link:`, postUrl);
               }
               break;
             }
@@ -1109,7 +1129,7 @@ if (window.s4sContentScriptLoaded) {
               // This is a fallback - we'll mark it as incomplete
               postUrl = `${profileUrl}#post-${Date.now()}-${index}`; // Temporary identifier
               if (index < 3) {
-                console.log(`[S4S] Post ${index + 1} fallback URL constructed:`, postUrl);
+                safeLog(`[S4S] Post ${index + 1} fallback URL constructed:`, postUrl);
               }
             }
           }
@@ -1120,13 +1140,13 @@ if (window.s4sContentScriptLoaded) {
       if (postUrl) {
         postUrl = cleanAndValidatePostUrl(postUrl);
         if (index < 3) {
-          console.log(`[S4S] Post ${index + 1} final cleaned URL:`, postUrl);
+          safeLog(`[S4S] Post ${index + 1} final cleaned URL:`, postUrl);
         }
       } else {
         if (index < 3) {
-          console.log(`[S4S] Post ${index + 1} - NO URL FOUND`);
+          safeLog(`[S4S] Post ${index + 1} - NO URL FOUND`);
           // Log available attributes for debugging
-          console.log(`[S4S] Post ${index + 1} debug info:`, {
+          safeLog(`[S4S] Post ${index + 1} debug info:`, {
             hasDataUrn: !!post.querySelector('[data-urn]'),
             dataUrn: post.querySelector('[data-urn]')?.getAttribute('data-urn'),
             allLinks: Array.from(post.querySelectorAll('a[href]')).map(a => a.href).slice(0, 5),
@@ -1209,9 +1229,12 @@ if (window.s4sContentScriptLoaded) {
   let scrollTimeoutId = null;
 
   async function smoothScrollFeed() {
-    console.log('[S4S] Starting human-like scrolling simulation');
     isScrolling = true;
     shouldStopScrolling = false;
+    
+    // Anti-detection: Add random initial delay to avoid detection patterns
+    const initialDelay = Math.random() * 2000 + 1000; // 1-3 seconds
+    await new Promise(resolve => setTimeout(resolve, initialDelay));
     
     let lastHeight = document.documentElement.scrollHeight;
     let stuckCount = 0;
@@ -1225,8 +1248,6 @@ if (window.s4sContentScriptLoaded) {
     let currentBaseSpeed = getRandomInRange(baseScrollSpeed.min, baseScrollSpeed.max);
     let currentInterval = getRandomInRange(scrollInterval.min, scrollInterval.max);
     
-    console.log('[S4S] Human-like scroll settings - base speed range:', baseScrollSpeed.min, '-', baseScrollSpeed.max, 'pixels/sec');
-    
     // Track scroll position and movement patterns
     let targetScrollY = window.scrollY;
     let scrollPhase = 0; // 0: reading, 1: scanning, 2: pausing
@@ -1236,23 +1257,29 @@ if (window.s4sContentScriptLoaded) {
     
     // Enhanced human behavior patterns
     const behaviorPatterns = {
-      readingPause: { min: 2000, max: 12000 }, // Longer pauses for reading (2-12 seconds)
+      readingPause: { min: 3000, max: 15000 }, // Longer pauses for reading (3-15 seconds)
       scanningSpeed: { min: 0.3, max: 2.0 }, // Wider speed range when scanning
       readingSpeed: { min: 0.1, max: 0.6 }, // Even slower when reading
       pauseFrequency: { min: 2, max: 6 }, // More frequent pauses
-      pauseDuration: { min: 800, max: 6000 }, // Variable pause duration
+      pauseDuration: { min: 1500, max: 8000 }, // Variable pause duration (longer for reading)
       microPause: { min: 150, max: 1200 }, // Longer micro pauses
       speedChangeInterval: { min: 5000, max: 15000 }, // Change base speed every 5-15 seconds
-      scrollBurst: { min: 3, max: 8 }, // Number of scrolls in a burst
-      burstPause: { min: 1000, max: 3000 } // Pause between bursts
+      scrollBurst: { min: 2, max: 5 }, // Number of wheel clicks in a burst (more realistic)
+      burstPause: { min: 1000, max: 3000 }, // Pause between bursts
+      // New reading-specific patterns
+      deepReadingPause: { min: 8000, max: 25000 }, // Deep reading pauses (8-25 seconds)
+      quickReadPause: { min: 1000, max: 4000 }, // Quick reading pauses (1-4 seconds)
+      interestPause: { min: 5000, max: 12000 } // Pause when finding interesting content (5-12 seconds)
     };
     
-    // Mouse wheel simulation patterns
+    // Mouse wheel simulation patterns - realistic wheel "clicks" (slower)
     const wheelPatterns = {
-      smallScroll: { min: 50, max: 150 }, // Small scroll like mouse wheel
-      mediumScroll: { min: 150, max: 300 }, // Medium scroll
-      largeScroll: { min: 300, max: 600 }, // Large scroll (page down)
-      scrollTypeChance: { small: 0.6, medium: 0.3, large: 0.1 } // Probability of each scroll type
+      // Standard mouse wheel click distances (like actual mouse wheel) - reduced by 30%
+      singleClick: { min: 84, max: 126 }, // One mouse wheel click (120px is standard) * 0.7
+      doubleClick: { min: 168, max: 252 }, // Two rapid clicks * 0.7
+      tripleClick: { min: 252, max: 378 }, // Three rapid clicks * 0.7
+      // Scroll type probabilities - mostly single clicks with occasional bursts
+      scrollTypeChance: { single: 0.75, double: 0.2, triple: 0.05 }
     };
     
     function getRandomInRange(min, max) {
@@ -1261,27 +1288,30 @@ if (window.s4sContentScriptLoaded) {
     
     function getRandomScrollType() {
       const rand = Math.random();
-      if (rand < wheelPatterns.scrollTypeChance.small) {
-        return 'small';
-      } else if (rand < wheelPatterns.scrollTypeChance.small + wheelPatterns.scrollTypeChance.medium) {
-        return 'medium';
+      if (rand < wheelPatterns.scrollTypeChance.single) {
+        return 'single';
+      } else if (rand < wheelPatterns.scrollTypeChance.single + wheelPatterns.scrollTypeChance.double) {
+        return 'double';
       } else {
-        return 'large';
+        return 'triple';
       }
     }
     
     function shouldPause() {
-      // More complex pause logic
-      const basePauseChance = scrollPhase === 0 ? 0.4 : 0.2; // Higher chance when reading
+      // More complex pause logic to simulate reading posts
+      const basePauseChance = scrollPhase === 0 ? 0.6 : 0.3; // Higher chance when reading
       
-      // Increase pause chance after many scrolls
-      const scrollBasedChance = Math.min(0.3, scrollCount * 0.05);
+      // Increase pause chance after many scrolls (like getting tired of scrolling)
+      const scrollBasedChance = Math.min(0.4, scrollCount * 0.08);
+      
+      // Add random reading pauses (like finding interesting content)
+      const readingPauseChance = Math.random() < 0.25; // 25% chance of reading pause
       
       // Random variation
-      const randomFactor = getRandomInRange(0.8, 1.2);
+      const randomFactor = getRandomInRange(0.7, 1.3);
       
       const finalChance = (basePauseChance + scrollBasedChance) * randomFactor;
-      return Math.random() < finalChance;
+      return Math.random() < finalChance || readingPauseChance;
     }
     
     function shouldChangeSpeed() {
@@ -1295,7 +1325,6 @@ if (window.s4sContentScriptLoaded) {
         currentBaseSpeed = getRandomInRange(baseScrollSpeed.min, baseScrollSpeed.max);
         currentInterval = getRandomInRange(scrollInterval.min, scrollInterval.max);
         lastSpeedChange = Date.now();
-        console.log('[S4S] Changed base speed to:', Math.round(currentBaseSpeed), 'pixels/sec, interval:', Math.round(currentInterval), 'ms');
       }
       
       let speedMultiplier = 1.0;
@@ -1321,49 +1350,59 @@ if (window.s4sContentScriptLoaded) {
       let distance;
       
       switch (scrollType) {
-        case 'small':
-          distance = getRandomInRange(wheelPatterns.smallScroll.min, wheelPatterns.smallScroll.max);
+        case 'single':
+          distance = getRandomInRange(wheelPatterns.singleClick.min, wheelPatterns.singleClick.max);
           break;
-        case 'medium':
-          distance = getRandomInRange(wheelPatterns.mediumScroll.min, wheelPatterns.mediumScroll.max);
+        case 'double':
+          distance = getRandomInRange(wheelPatterns.doubleClick.min, wheelPatterns.doubleClick.max);
           break;
-        case 'large':
-          distance = getRandomInRange(wheelPatterns.largeScroll.min, wheelPatterns.largeScroll.max);
+        case 'triple':
+          distance = getRandomInRange(wheelPatterns.tripleClick.min, wheelPatterns.tripleClick.max);
           break;
         default:
-          distance = getRandomInRange(100, 200);
+          distance = getRandomInRange(wheelPatterns.singleClick.min, wheelPatterns.singleClick.max);
       }
       
       // Add some variation based on phase
       if (scrollPhase === 0) { // Reading - smaller scrolls
-        distance *= getRandomInRange(0.5, 1.0);
+        distance *= getRandomInRange(0.7, 1.0); // Less variation for more realistic wheel clicks
       } else { // Scanning - larger scrolls
-        distance *= getRandomInRange(1.0, 1.5);
+        distance *= getRandomInRange(1.0, 1.3); // Slightly larger but still realistic
       }
       
       return Math.floor(distance);
     }
     
     function getScrollDelay() {
-      // Base delay with more variation
+      // Base delay between mouse wheel clicks
       let delay = currentInterval;
       
-      // Add micro-pauses with higher frequency
-      if (Math.random() < 0.3) { // 30% chance
-        delay += getRandomInRange(behaviorPatterns.microPause.min, behaviorPatterns.microPause.max);
+      // Add natural variation to simulate human mouse wheel timing
+      if (Math.random() < 0.4) { // 40% chance of slight variation
+        delay += getRandomInRange(50, 300);
       }
       
-      // Occasionally add longer pauses
-      if (Math.random() < 0.1) { // 10% chance
-        delay += getRandomInRange(500, 1500);
+      // Occasionally add longer pauses (like stopping to read)
+      if (Math.random() < 0.2) { // 20% chance (increased)
+        delay += getRandomInRange(1000, 3000);
+      }
+      
+      // Rare longer pauses (like deep reading)
+      if (Math.random() < 0.08) { // 8% chance (increased)
+        delay += getRandomInRange(3000, 8000);
+      }
+      
+      // Add random micro-pauses for reading (like glancing at content)
+      if (Math.random() < 0.3) { // 30% chance
+        delay += getRandomInRange(200, 800);
       }
       
       return Math.floor(delay);
     }
     
     function shouldDoScrollBurst() {
-      // Do burst scrolling occasionally (like rapid mouse wheel)
-      return Math.random() < 0.15; // 15% chance
+      // Do burst scrolling occasionally (like rapid mouse wheel clicks)
+      return Math.random() < 0.25; // 25% chance - more realistic for mouse wheel
     }
     
     function getBurstScrolls() {
@@ -1374,13 +1413,11 @@ if (window.s4sContentScriptLoaded) {
       while (!shouldStopScrolling) {
         // Check timeout
         if (Date.now() - startTime > maxScrollTime) {
-          console.log('[S4S] Scroll timeout reached after', Math.round((Date.now() - startTime) / 1000), 'seconds');
           break;
         }
         
         // Check if we should stop
         if (shouldStopScrolling) {
-          console.log('[S4S] Stopping scroll due to stop signal');
           break;
         }
         
@@ -1390,16 +1427,30 @@ if (window.s4sContentScriptLoaded) {
         // Switch between reading and scanning phases
         if (scrollPhase === 0 && timeSinceLastPause > 15000) { // Reading for 15+ seconds
           scrollPhase = 1; // Switch to scanning
-          console.log('[S4S] Switching to scanning phase');
         } else if (scrollPhase === 1 && timeSinceLastPause > 10000) { // Scanning for 10+ seconds
           scrollPhase = 0; // Switch back to reading
-          console.log('[S4S] Switching to reading phase');
         }
         
         // Decide if we should pause (simulating reading a post)
-        if (shouldPause() && timeSinceLastPause > 3000) { // Don't pause too frequently
-          const pauseDuration = getRandomInRange(behaviorPatterns.pauseDuration.min, behaviorPatterns.pauseDuration.max);
-          console.log('[S4S] Pausing to "read" for', Math.round(pauseDuration), 'ms');
+        if (shouldPause() && timeSinceLastPause > 2000) { // Allow more frequent pauses for reading
+          let pauseDuration;
+          let pauseType;
+          
+          // Determine type of reading pause based on probability
+          const pauseTypeRand = Math.random();
+          if (pauseTypeRand < 0.1) { // 10% chance of deep reading
+            pauseDuration = getRandomInRange(behaviorPatterns.deepReadingPause.min, behaviorPatterns.deepReadingPause.max);
+            pauseType = 'deep reading';
+          } else if (pauseTypeRand < 0.3) { // 20% chance of interest pause
+            pauseDuration = getRandomInRange(behaviorPatterns.interestPause.min, behaviorPatterns.interestPause.max);
+            pauseType = 'interesting content';
+          } else if (pauseTypeRand < 0.6) { // 30% chance of normal reading
+            pauseDuration = getRandomInRange(behaviorPatterns.pauseDuration.min, behaviorPatterns.pauseDuration.max);
+            pauseType = 'reading';
+          } else { // 40% chance of quick read
+            pauseDuration = getRandomInRange(behaviorPatterns.quickReadPause.min, behaviorPatterns.quickReadPause.max);
+            pauseType = 'quick read';
+          }
           
           await new Promise(resolve => setTimeout(resolve, pauseDuration));
           lastPauseTime = Date.now();
@@ -1409,47 +1460,39 @@ if (window.s4sContentScriptLoaded) {
           scrollCount = 0; // Reset scroll count after pause
         }
         
-        // Check for scroll burst (rapid scrolling like mouse wheel)
+        // Check for scroll burst (rapid mouse wheel clicks)
         if (shouldDoScrollBurst()) {
           const burstCount = getBurstScrolls();
-          console.log('[S4S] Starting scroll burst of', burstCount, 'scrolls');
           
           for (let i = 0; i < burstCount && !shouldStopScrolling; i++) {
             const burstDistance = getScrollDistance();
             targetScrollY += burstDistance;
             
-            // Quick scroll without smooth behavior for burst
+            // Instant scroll jump (like mouse wheel click)
             window.scrollTo(0, targetScrollY);
             
-            console.log('[S4S] Burst scroll', i + 1, '/', burstCount, ':', burstDistance, 'pixels');
-            
-            // Short delay between burst scrolls
-            await new Promise(resolve => setTimeout(resolve, getRandomInRange(50, 200)));
+            // Very short delay between wheel clicks (like rapid mouse wheel)
+            await new Promise(resolve => setTimeout(resolve, getRandomInRange(30, 100)));
             scrollCount++;
           }
           
           // Pause after burst
           const burstPause = getRandomInRange(behaviorPatterns.burstPause.min, behaviorPatterns.burstPause.max);
-          console.log('[S4S] Pausing after burst for', Math.round(burstPause), 'ms');
           await new Promise(resolve => setTimeout(resolve, burstPause));
           
         } else {
-          // Normal single scroll
+          // Normal single mouse wheel click
           const scrollDistance = getScrollDistance();
           targetScrollY += scrollDistance;
           
-          // Smooth scroll to position (simulate human mouse wheel behavior)
+          // Instant scroll jump (like single mouse wheel click)
           const currentY = window.scrollY;
           const distance = targetScrollY - currentY;
           
           if (Math.abs(distance) > 5) { // Only scroll if there's meaningful distance
-            // Use smooth scrolling for more natural movement
-            window.scrollTo({
-              top: targetScrollY,
-              behavior: 'smooth'
-            });
+            // Use instant scroll for realistic mouse wheel behavior
+            window.scrollTo(0, targetScrollY);
             
-            console.log('[S4S] Scrolled', scrollDistance, 'pixels to', targetScrollY, 'phase:', scrollPhase === 0 ? 'reading' : 'scanning');
             scrollCount++;
           }
         }
@@ -1458,19 +1501,17 @@ if (window.s4sContentScriptLoaded) {
         const delay = getScrollDelay();
         await new Promise(resolve => setTimeout(resolve, delay));
         
-        // Check for new content every few seconds
-        if (Date.now() % 5000 < scrollInterval) { // Check every ~5 seconds
+        // Anti-detection: Randomize content check intervals
+        const contentCheckInterval = Math.random() * 3000 + 4000; // 4-7 seconds
+        if (Date.now() % Math.floor(contentCheckInterval) < scrollInterval) {
           let newHeight = document.documentElement.scrollHeight;
           if (newHeight === lastHeight) {
             stuckCount++;
-            console.log('[S4S] No new content loaded, stuck count:', stuckCount, 'of', maxStuckCount);
             if (stuckCount >= maxStuckCount) {
-              console.log('[S4S] Max stuck count reached, stopping scroll');
               break;
             }
           } else {
             stuckCount = 0;
-            console.log('[S4S] New content loaded, height changed from', lastHeight, 'to', newHeight);
           }
           lastHeight = newHeight;
         }
@@ -1483,12 +1524,10 @@ if (window.s4sContentScriptLoaded) {
         clearTimeout(scrollTimeoutId);
         scrollTimeoutId = null;
       }
-      console.log('[S4S] Human-like scroll completed');
     }
   }
 
   function stopScrolling() {
-    console.log('[S4S] Stop scrolling requested');
     shouldStopScrolling = true;
     isScrolling = false;
     if (scrollTimeoutId) {
@@ -1499,45 +1538,29 @@ if (window.s4sContentScriptLoaded) {
 
   // Debug function to test connection degree extraction
   function debugConnectionDegree() {
-    console.log('[S4S] Debugging connection degree extraction...');
     const posts = document.querySelectorAll('div.feed-shared-update-v2[data-urn*="activity"], article.feed-shared-update-v2[data-urn*="activity"]');
-    console.log(`[S4S] Found ${posts.length} posts to test`);
     
     for (let i = 0; i < Math.min(posts.length, 3); i++) {
       const post = posts[i];
-      console.log(`[S4S] Testing post ${i + 1}:`);
-      console.log(`[S4S] Post HTML:`, post.outerHTML.substring(0, 500) + '...');
       
       // Test both the new and legacy functions
       const newResult = getConnectionDegreeFromDOM(post);
       const legacyResult = extractConnectionDegree(post);
       
-      console.log(`[S4S] New function result: "${newResult}"`);
-      console.log(`[S4S] Legacy function result: "${legacyResult}"`);
-      
       // Also test with text content
       const textResult = getConnectionDegree(post.textContent);
-      console.log(`[S4S] Text content result: "${textResult}"`);
     }
   }
 
   // Debug function for repost detection
   function debugRepostDetection() {
-    console.log('[S4S] Debugging repost detection...');
-    
     const posts = document.querySelectorAll('div.feed-shared-update-v2[data-urn*="activity"], article.feed-shared-update-v2[data-urn*="activity"]');
-    console.log(`[S4S] Found ${posts.length} posts to analyze for reposts`);
     
     posts.forEach((post, index) => {
       const repostInfo = detectAndExtractRepostContent(post);
-      console.log(`[S4S] Post ${index + 1}:`, {
-        isRepost: repostInfo.isRepost,
-        originalContentLength: repostInfo.originalContent.length,
-        originalContentPreview: repostInfo.originalContent.substring(0, 100) + '...'
-      });
       
       if (repostInfo.isRepost) {
-        console.log(`[S4S] Post ${index + 1} REPOST DETECTED! Original content:`, repostInfo.originalContent);
+        // Repost detected
       }
     });
   }
@@ -1547,7 +1570,6 @@ if (window.s4sContentScriptLoaded) {
 
   // Listen for messages from popup or background
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    console.log('[S4S] Received message:', msg);
     
     try {
       if (msg.action === "extractPosts") {
@@ -1556,7 +1578,6 @@ if (window.s4sContentScriptLoaded) {
         
         withTimeout(extractionPromise, 30000) // Increased timeout for menu interactions
           .then(posts => {
-            console.log('[S4S] Extracted posts:', posts.length);
             sendResponse({ posts: posts });
           })
           .catch(error => {
@@ -1568,11 +1589,8 @@ if (window.s4sContentScriptLoaded) {
       }
 
       if (msg.action === "performSingleScroll") {
-        console.log('[S4S] Starting performSingleScroll');
-        
         withTimeout(smoothScrollFeed(), 300000) // Increased from 65s to 5 minutes
           .then(() => {
-            console.log('[S4S] Scroll completed, sending response');
             sendResponse({ success: true, stopped: shouldStopScrolling });
           })
           .catch(error => {
@@ -1584,10 +1602,7 @@ if (window.s4sContentScriptLoaded) {
       }
 
       if (msg.action === "stopScroll") {
-        console.log('[S4S] Received stopScroll message from popup');
-        console.log('[S4S] Current scrolling state - isScrolling:', isScrolling, 'shouldStopScrolling:', shouldStopScrolling);
         stopScrolling();
-        console.log('[S4S] After stopScrolling() - isScrolling:', isScrolling, 'shouldStopScrolling:', shouldStopScrolling);
         sendResponse({ success: true, message: "Scrolling stopped" });
         return false; // Synchronous response
       }
@@ -1610,7 +1625,6 @@ if (window.s4sContentScriptLoaded) {
       }
 
       if (msg.action === "testRefresh") {
-        console.log('[S4S] Manual refresh test requested');
         // This will be handled by the popup script
         sendResponse({ success: true, message: "Refresh test request received" });
         return false; // Synchronous response
