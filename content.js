@@ -1,3 +1,10 @@
+// Prevent multiple injections of this script
+if (window.S4S_CONTENT_SCRIPT_LOADED) {
+  // Content script already loaded, exit early
+  console.log('[S4S] Content script already loaded, skipping re-initialization');
+} else {
+  window.S4S_CONTENT_SCRIPT_LOADED = true;
+
 // Anti-detection: Disable console logging in production
 const DEBUG_MODE = false; // Set to false to disable all console logging
 
@@ -188,6 +195,86 @@ safeLog('[S4S] Content script loaded');
           }
         }
         
+        // Check if this is an embedded post and extract inner post information
+        const embeddedPostInfo = detectAndExtractRepostContent(post);
+        if (embeddedPostInfo.isRepost) {
+          safeLog(`[S4S] Post ${index + 1} is an embedded post, prioritizing inner post information`);
+          
+          // Store the container's information as fallback
+          const containerName = name;
+          const containerLinkedinUrl = linkedinUrl;
+          
+          // Look for inner post's author name within embedded post containers
+          const innerAuthorSelectors = [
+            // Nested embedded post author names (prioritize these)
+            '.feed-shared-update-v2__content .feed-shared-update-v2 .feed-shared-actor__name',
+            '.feed-shared-update-v2__content .feed-shared-update-v2 .update-components-actor__name',
+            '.feed-shared-update-v2__content article .feed-shared-actor__name',
+            '.feed-shared-update-v2__content article .update-components-actor__name',
+            
+            // Quote author names
+            '.feed-shared-update-v2__content .feed-shared-update-v2__description .feed-shared-actor__name',
+            '.feed-shared-update-v2__content .feed-shared-update-v2__description .update-components-actor__name',
+            
+            // Repost author names
+            '.feed-shared-update-v2__content .feed-shared-actor__name',
+            '.feed-shared-update-v2__content .update-components-actor__name',
+            '.feed-shared-update-v2__content span[class*="name"]',
+            '[data-test-id="repost-content"] .feed-shared-actor__name',
+            '[data-test-id="repost-content"] .update-components-actor__name',
+            '.repost-content .feed-shared-actor__name',
+            '.repost-content .update-components-actor__name',
+            '.shared-update-content .feed-shared-actor__name',
+            '.shared-update-content .update-components-actor__name'
+          ];
+          
+          // Try to find inner post author name
+          for (const selector of innerAuthorSelectors) {
+            const authorElem = post.querySelector(selector);
+            if (authorElem && authorElem.innerText.trim()) {
+              const innerName = authorElem.innerText.trim();
+              if (innerName.length > 1 && innerName.length < 50 && innerName !== containerName) {
+                name = innerName;
+                safeLog(`[S4S] Post ${index + 1} found inner post author name: "${name}" (was: "${containerName}")`);
+                break;
+              }
+            }
+          }
+          
+          // Look for inner post's LinkedIn profile URL
+          const innerProfileSelectors = [
+            // Nested embedded post profile URLs (prioritize these)
+            '.feed-shared-update-v2__content .feed-shared-update-v2 a[href*="/in/"]',
+            '.feed-shared-update-v2__content .feed-shared-update-v2 a[data-control-name="actor_profile"]',
+            '.feed-shared-update-v2__content article a[href*="/in/"]',
+            '.feed-shared-update-v2__content article a[data-control-name="actor_profile"]',
+            
+            // Quote profile URLs
+            '.feed-shared-update-v2__content .feed-shared-update-v2__description a[href*="/in/"]',
+            '.feed-shared-update-v2__content .feed-shared-update-v2__description a[data-control-name="actor_profile"]',
+            
+            // Repost profile URLs
+            '.feed-shared-update-v2__content a[href*="/in/"]',
+            '.feed-shared-update-v2__content a[data-control-name="actor_profile"]',
+            '[data-test-id="repost-content"] a[href*="/in/"]',
+            '[data-test-id="repost-content"] a[data-control-name="actor_profile"]',
+            '.repost-content a[href*="/in/"]',
+            '.repost-content a[data-control-name="actor_profile"]',
+            '.shared-update-content a[href*="/in/"]',
+            '.shared-update-content a[data-control-name="actor_profile"]'
+          ];
+          
+          // Try to find inner post profile URL
+          for (const selector of innerProfileSelectors) {
+            const profileElem = post.querySelector(selector);
+            if (profileElem && profileElem.href && profileElem.href !== containerLinkedinUrl) {
+              linkedinUrl = profileElem.href;
+              safeLog(`[S4S] Post ${index + 1} found inner post profile URL: "${linkedinUrl}" (was: "${containerLinkedinUrl}")`);
+              break;
+            }
+          }
+        }
+        
         // Fallback: if we didn't find both name and profile, try broader search
         if (!name || !linkedinUrl) {
           // Try to find any profile link in the post
@@ -343,64 +430,33 @@ safeLog('[S4S] Content script loaded');
           }
         }
         
-        // Check if this is a repost and extract original content
+        // Check if this is a repost but prioritize outer post content
         const repostInfo = detectAndExtractRepostContent(post);
         
-        // If main content is empty or very short, look for reposted content
-        if (!content || content.length < 50) {
-          safeLog(`[S4S] Post ${index + 1} main content is empty or short, looking for reposted content...`);
+        // For embedded posts, prioritize outer post content over inner post content
+        if (repostInfo.isRepost) {
+          safeLog(`[S4S] Post ${index + 1} is an embedded post, prioritizing outer post content`);
           
-          // If we detected a repost, use the original content
-          if (repostInfo.isRepost && repostInfo.originalContent) {
-            content = repostInfo.originalContent;
-            safeLog(`[S4S] Post ${index + 1} using detected repost content: "${content.substring(0, 100)}..."`);
+          // If we have outer post content, use it (even if short)
+          if (content && content.length > 0) {
+            safeLog(`[S4S] Post ${index + 1} using outer post content: "${content.substring(0, 100)}..."`);
           } else {
-            // Look for reposted content - LinkedIn reposts are often in different containers
-            const repostSelectors = [
-              // Repost containers
-              '.feed-shared-update-v2__content',
-              '.feed-shared-update-v2__content-wrapper',
-              '.feed-shared-update-v2__description-wrapper',
-              '.feed-shared-update-v2__description',
-              
-              // Nested content within reposts
-              '.feed-shared-update-v2__content .feed-shared-update-v2__description',
-              '.feed-shared-update-v2__content .feed-shared-text',
-              '.feed-shared-update-v2__content .break-words',
-              
-              // Repost specific selectors
-              '[data-test-id="repost-content"]',
-              '.repost-content',
-              '.shared-update-content',
-              
-              // Fallback: any nested content that might be the original post
-              '.feed-shared-update-v2__content div[class*="description"]',
-              '.feed-shared-update-v2__content div[class*="text"]',
-              '.feed-shared-update-v2__content span[class*="break"]'
-            ];
+            // Only look for inner post content if outer post has no content at all
+            safeLog(`[S4S] Post ${index + 1} outer post has no content, looking for inner post content...`);
             
-            for (const selector of repostSelectors) {
-              const repostElems = post.querySelectorAll(selector);
-              for (const repostElem of repostElems) {
-                const text = repostElem.innerText.trim();
-                if (text && text.length > 20 && 
-                    !text.includes('Follow') && 
-                    !text.includes('Connect') && 
-                    !text.includes('•') && 
-                    !text.includes('1st') && 
-                    !text.includes('2nd') && 
-                    !text.includes('3rd+') &&
-                    text !== content) { // Make sure it's different from what we already have
-                  
-                  const cleanedText = cleanTextContent(text);
-                  if (cleanedText.length > content.length) {
-                    content = cleanedText;
-                    safeLog(`[S4S] Post ${index + 1} found reposted content: "${content.substring(0, 100)}..." using selector: ${selector}`);
-                    break;
-                  }
-                }
-              }
-              if (content && content.length > 50) break; // Found good content, stop searching
+            if (repostInfo.originalContent) {
+              content = repostInfo.originalContent;
+              safeLog(`[S4S] Post ${index + 1} using inner post content as fallback: "${content.substring(0, 100)}..."`);
+            }
+          }
+        } else {
+          // For regular posts, if main content is empty or very short, look for additional content
+          if (!content || content.length < 50) {
+            safeLog(`[S4S] Post ${index + 1} main content is empty or short, looking for additional content...`);
+            
+            if (repostInfo.originalContent) {
+              content = repostInfo.originalContent;
+              safeLog(`[S4S] Post ${index + 1} using detected additional content: "${content.substring(0, 100)}..."`);
             }
           }
         }
@@ -523,7 +579,18 @@ safeLog('[S4S] Content script loaded');
       'worth sharing',
       'must read',
       'interesting',
-      'thought this was worth sharing'
+      'thought this was worth sharing',
+      
+      // Additional indicators for embedded posts
+      'hiring',
+      'job',
+      'position',
+      'opportunity',
+      'team',
+      'recruiting',
+      'looking for',
+      'seeking',
+      'open position'
     ];
     
     // Check if the main content contains repost indicators
@@ -538,13 +605,61 @@ safeLog('[S4S] Content script loaded');
       }
     }
     
+    // Enhanced detection: Look for specific inner post structure patterns
+    if (!isRepost) {
+      // Check for nested actor containers (indicates embedded post)
+      const nestedActorContainers = post.querySelectorAll('.feed-shared-update-v2__content .update-components-actor__container, .feed-shared-update-v2__content .feed-shared-actor__container');
+      if (nestedActorContainers.length > 0) {
+        isRepost = true;
+        safeLog(`[S4S] Detected nested actor containers (${nestedActorContainers.length} found)`);
+      }
+      
+      // Check for nested post structures with meta information
+      const nestedMetaInfo = post.querySelectorAll('.feed-shared-update-v2__content .update-components-actor__meta, .feed-shared-update-v2__content .feed-shared-actor__meta');
+      if (nestedMetaInfo.length > 0) {
+        isRepost = true;
+        safeLog(`[S4S] Detected nested meta information (${nestedMetaInfo.length} found)`);
+      }
+      
+      // Check for nested post descriptions (like "Sales Recruiting Lead, Latina & Nature Enthusiast")
+      const nestedDescriptions = post.querySelectorAll('.feed-shared-update-v2__content .update-components-actor__description, .feed-shared-update-v2__content .feed-shared-actor__description');
+      if (nestedDescriptions.length > 0) {
+        isRepost = true;
+        safeLog(`[S4S] Detected nested descriptions (${nestedDescriptions.length} found)`);
+      }
+      
+      // Check for nested sub-descriptions (like "11h • globe-americas")
+      const nestedSubDescriptions = post.querySelectorAll('.feed-shared-update-v2__content .update-components-actor__sub-description, .feed-shared-update-v2__content .feed-shared-actor__sub-description');
+      if (nestedSubDescriptions.length > 0) {
+        isRepost = true;
+        safeLog(`[S4S] Detected nested sub-descriptions (${nestedSubDescriptions.length} found)`);
+      }
+    }
+    
     // Look for repost-specific DOM structure
     const repostStructureSelectors = [
       '.feed-shared-update-v2__content',
       '.feed-shared-update-v2__content-wrapper',
       '[data-test-id="repost-content"]',
       '.repost-content',
-      '.shared-update-content'
+      '.shared-update-content',
+      
+      // Specific inner post indicators from the provided HTML
+      '.update-components-actor__container', // Inner post actor container
+      '.update-components-actor__meta', // Inner post meta information
+      '.update-components-actor__title', // Inner post title
+      '.update-components-actor__description', // Inner post description
+      '.update-components-actor__sub-description', // Inner post sub-description
+      
+      // Nested post structures
+      '.feed-shared-update-v2__content .update-components-actor__container',
+      '.feed-shared-update-v2__content .feed-shared-actor__container',
+      '.feed-shared-update-v2__content article',
+      '.feed-shared-update-v2__content .feed-shared-update-v2',
+      
+      // Quote and embedded post structures
+      '.feed-shared-update-v2__description .update-components-actor__container',
+      '.feed-shared-update-v2__description .feed-shared-actor__container'
     ];
     
     for (const selector of repostStructureSelectors) {
@@ -982,39 +1097,81 @@ safeLog('[S4S] Content script loaded');
         safeLog(`[S4S] Analyzing post ${index + 1} for URL extraction`);
       }
       
-      // Method 1: Look for direct post links (most reliable)
-      const directPostSelectors = [
-        'a[href*="/feed/update/"]',
-        'a[href*="/posts/"]',
-        'a[href*="/activity-"]',
-        'a[data-control-name="post_link"]',
-        'a[data-control-name="feed_detail"]',
-        'a[data-control-name="post_click"]',
-        'a[data-control-name="feed_detail_click"]'
+      // Method 1: Look for outer post links first (prioritize the container post)
+      const outerPostSelectors = [
+        // Outer post specific selectors (prioritize these) - exclude nested content
+        '.feed-shared-update-v2 > a[href*="/feed/update/"]',
+        '.feed-shared-update-v2 > a[href*="/posts/"]',
+        '.feed-shared-update-v2 > a[href*="/activity-"]',
+        '.feed-shared-update-v2 > a[data-control-name="post_link"]',
+        '.feed-shared-update-v2 > a[data-control-name="feed_detail"]',
+        '.feed-shared-update-v2 > a[data-control-name="post_click"]',
+        '.feed-shared-update-v2 > a[data-control-name="feed_detail_click"]',
+        
+        // Direct child selectors to avoid nested content
+        '> a[href*="/feed/update/"]',
+        '> a[href*="/posts/"]',
+        '> a[href*="/activity-"]',
+        '> a[data-control-name="post_link"]',
+        '> a[data-control-name="feed_detail"]',
+        '> a[data-control-name="post_click"]',
+        '> a[data-control-name="feed_detail_click"]',
+        
+        // General post links (fallback) - but exclude nested content
+        'a[href*="/feed/update/"]:not(.feed-shared-update-v2__content a)',
+        'a[href*="/posts/"]:not(.feed-shared-update-v2__content a)',
+        'a[href*="/activity-"]:not(.feed-shared-update-v2__content a)',
+        'a[data-control-name="post_link"]:not(.feed-shared-update-v2__content a)',
+        'a[data-control-name="feed_detail"]:not(.feed-shared-update-v2__content a)',
+        'a[data-control-name="post_click"]:not(.feed-shared-update-v2__content a)',
+        'a[data-control-name="feed_detail_click"]:not(.feed-shared-update-v2__content a)'
       ];
       
-      for (const selector of directPostSelectors) {
+      for (const selector of outerPostSelectors) {
         const linkElem = post.querySelector(selector);
         if (linkElem && linkElem.href) {
           postUrl = linkElem.href;
           if (index < 3) {
-            safeLog(`[S4S] Post ${index + 1} URL found via direct link (${selector}):`, postUrl);
+            safeLog(`[S4S] Post ${index + 1} URL found via outer post link (${selector}):`, postUrl);
           }
           break;
         }
       }
       
-      // Method 2: Extract from timestamp/date links
+      // Method 2: Extract from outer post timestamp/date links (prioritize container timestamps)
       if (!postUrl) {
-        const timeLinks = post.querySelectorAll('time a, a[aria-label*="ago"], .update-components-actor__sub-description a, a[data-control-name="timestamp"]');
-        for (const timeLink of timeLinks) {
-          if (timeLink.href && (timeLink.href.includes('/posts/') || timeLink.href.includes('/feed/update/'))) {
-            postUrl = timeLink.href;
-            if (index < 3) {
-              safeLog(`[S4S] Post ${index + 1} URL found via timestamp link:`, postUrl);
+        const outerTimeSelectors = [
+          // Outer post timestamp selectors (prioritize these) - exclude nested content
+          '.feed-shared-update-v2 > time a',
+          '.feed-shared-update-v2 > a[aria-label*="ago"]',
+          '.feed-shared-update-v2 > .update-components-actor__sub-description a',
+          '.feed-shared-update-v2 > a[data-control-name="timestamp"]',
+          
+          // Direct child selectors to avoid nested content
+          '> time a',
+          '> a[aria-label*="ago"]',
+          '> .update-components-actor__sub-description a',
+          '> a[data-control-name="timestamp"]',
+          
+          // General timestamp selectors (fallback) - but exclude nested content
+          'time a:not(.feed-shared-update-v2__content time a)',
+          'a[aria-label*="ago"]:not(.feed-shared-update-v2__content a[aria-label*="ago"])',
+          '.update-components-actor__sub-description a:not(.feed-shared-update-v2__content .update-components-actor__sub-description a)',
+          'a[data-control-name="timestamp"]:not(.feed-shared-update-v2__content a[data-control-name="timestamp"])'
+        ];
+        
+        for (const selector of outerTimeSelectors) {
+          const timeLinks = post.querySelectorAll(selector);
+          for (const timeLink of timeLinks) {
+            if (timeLink.href && (timeLink.href.includes('/posts/') || timeLink.href.includes('/feed/update/'))) {
+              postUrl = timeLink.href;
+              if (index < 3) {
+                safeLog(`[S4S] Post ${index + 1} URL found via outer timestamp link (${selector}):`, postUrl);
+              }
+              break;
             }
-            break;
           }
+          if (postUrl) break;
         }
       }
       
@@ -1042,9 +1199,12 @@ safeLog('[S4S] Content script loaded');
         }
       }
       
-      // Method 4: Look for URN-based construction with working URL format
+      // Method 4: Look for outer post URN-based construction (prioritize container URN)
       if (!postUrl) {
-        const urnElement = post.querySelector('[data-urn]') || post;
+        // First try to find the outer post's URN (the main post container) - exclude nested content
+        let urnElement = post.querySelector('.feed-shared-update-v2[data-urn]') || 
+                        post.querySelector('[data-urn]:not(.feed-shared-update-v2__content [data-urn])') || 
+                        post;
         if (urnElement) {
           const dataUrn = urnElement.getAttribute('data-urn');
           if (dataUrn) {
@@ -1638,3 +1798,5 @@ safeLog('[S4S] Content script loaded');
     return false; // Default to synchronous response
   });
 }
+
+} // End of content script guard

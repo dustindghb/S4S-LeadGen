@@ -1,15 +1,42 @@
 // Background script - simplified
+console.log('[S4S] Background script starting...');
+
+// Handle extension installation
+chrome.runtime.onInstalled.addListener((details) => {
+  console.log('[S4S] Extension installed/updated:', details.reason);
+  if (details.reason === 'install') {
+    console.log('[S4S] First time installation');
+  } else if (details.reason === 'update') {
+    console.log('[S4S] Extension updated from version', details.previousVersion);
+  }
+});
+
+// Keep service worker alive with periodic ping
+setInterval(() => {
+  console.log('[S4S] Background script heartbeat');
+}, 30000); // Every 30 seconds
+
+// Handle extension icon click
 chrome.action.onClicked.addListener((tab) => {
-  // Extension icon clicked - open popup in detachable window
-  chrome.windows.create({
-    url: 'popup.html',
-    type: 'normal',
-    width: 450,
-    height: 600,
-    focused: true,
-    left: 100,
-    top: 100
-  });
+  try {
+    console.log('[S4S] Extension icon clicked');
+    // Extension icon clicked - open popup in detachable window
+    chrome.windows.create({
+      url: 'popup.html',
+      type: 'normal',
+      width: 450,
+      height: 600,
+      focused: true,
+      left: 100,
+      top: 100
+    }).then(() => {
+      console.log('[S4S] Popup window created successfully');
+    }).catch(err => {
+      console.error('[S4S] Failed to create popup window:', err);
+    });
+  } catch (error) {
+    console.error('[S4S] Error in icon click handler:', error);
+  }
 });
 
 // Listen for tab updates to ensure content script is injected after page refresh
@@ -32,7 +59,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // Handle messages from popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Background script received message:', message);
+  try {
+    console.log('[S4S] Background script received message:', message);
   if (message.action === 'injectContentScript') {
     // Find the most recently active LinkedIn tab in any window
     chrome.tabs.query({ url: '*://www.linkedin.com/*' }, (tabs) => {
@@ -112,8 +140,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.action === 'ping') {
-    console.log('Background script received ping');
+    console.log('[S4S] Background script received ping');
     sendResponse({ success: true, message: 'Background script is working' });
     return false; // Synchronous response
+  }
+  } catch (error) {
+    console.error('[S4S] Error in message listener:', error);
+    sendResponse({ success: false, error: error.message });
   }
 });

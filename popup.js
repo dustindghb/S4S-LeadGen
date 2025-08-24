@@ -50,7 +50,7 @@ async function ensureContentScriptInjected() {
   }
   
   // Function to send message to content script with timeout
-  async function sendMessage(tabId, message, timeout = 10000) {
+  async function sendMessage(tabId, message, timeout = 30000) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(new Error('Message timeout'));
@@ -1167,7 +1167,7 @@ JSON:`;
     (async () => {
       try {
         const clientLists = await loadClientListsFromStorage();
-        if (clientLists.currentClients.length > 0 || clientLists.blacklistedClients.length > 0) {
+        if (clientLists.currentClients.length > 0 || clientLists.excludedClients.length > 0) {
           updateClientListsUI(clientLists);
           displayClientLists(clientLists);
           console.log('[S4S] Client lists loaded from storage');
@@ -3030,7 +3030,61 @@ www.stage4solutions.com/`;
     // Clean up connection degree
     const cleanConnectionDegree = connectionDegree ? connectionDegree.toLowerCase().replace(/\s+/g, '') : '3rd';
     
-    if (cleanConnectionDegree.includes('2nd') || cleanConnectionDegree.includes('second')) {
+    // Debug logging
+    console.log('[S4S] Connection message generation debug:', {
+      originalConnectionDegree: connectionDegree,
+      cleanConnectionDegree: cleanConnectionDegree,
+      name: name,
+      company: company,
+      isFirstDegree: cleanConnectionDegree.includes('1st') || cleanConnectionDegree.includes('first')
+    });
+    
+    if (cleanConnectionDegree.includes('1st') || cleanConnectionDegree.includes('first')) {
+      // For first-degree connections, check if they are approved vendors
+      if (isCurrentClientFlag) {
+        // Approved vendor message
+        return `Hi ${firstName},
+
+I noticed on LinkedIn that you are hiring for your team.
+
+I wanted to take a moment to re-introduce myself and my company, Stage 4 Solutions, an interim staffing company ranked on the Inc. 5000 list five times for consistent growth. We are an approved vendor for "${company}".
+
+For the last 23 years, we have filled gaps across marketing, IT and operations teams - nationwide. We are in the top 9% of staffing firms nationally!
+
+I noticed on LinkedIn that you are hiring for your team. We have quickly filled gaps at our clients such as NetApp, AWS, Salesforce, ServiceNow, and HPE. Here's what our clients say about us: https://www.stage4solutions.com/clientsuccess/testimonials/
+
+We specialize in providing timely, cost-effective, and well-qualified professionals for contract (full or part-time) and contract to perm roles.
+
+I would love to support you in filling any gaps in your team with well-qualified contractors.
+
+What is a good time to talk over the next couple of weeks? Please let me know and I will send you a meeting invite.
+
+Looking forward to our conversation,
+
+Niti`;
+      } else {
+        // Regular first-degree connection message
+        return `Hi ${firstName},
+
+I noticed on LinkedIn that you are hiring for your team.
+
+I wanted to take a moment to re-introduce myself and my company, Stage 4 Solutions, an interim staffing company ranked on the Inc. 5000 list five times for consistent growth.
+
+For the last 23 years, we have filled gaps across marketing, IT and operations teams - nationwide. We are in the top 9% of staffing firms nationally!
+
+I noticed on LinkedIn that you are hiring for your team. We have quickly filled gaps at our clients such as NetApp, AWS, Salesforce, ServiceNow, and HPE. Here's what our clients say about us: https://www.stage4solutions.com/clientsuccess/testimonials/
+
+We specialize in providing timely, cost-effective, and well-qualified professionals for contract (full or part-time) and contract to perm roles.
+
+I would love to support you in filling any gaps in your team with well-qualified contractors.
+
+What is a good time to talk over the next couple of weeks? Please let me know and I will send you a meeting invite.
+
+Looking forward to our conversation,
+
+Niti`;
+      }
+    } else if (cleanConnectionDegree.includes('2nd') || cleanConnectionDegree.includes('second')) {
       return `Hi ${firstName},
 
 I am the CEO of Stage 4 Solutions, a consulting and interim staffing company ranked on Inc.5000 list five times. We share many connections on LinkedIn. I noticed your company is growing and thought it would be great to connect.
@@ -3571,7 +3625,7 @@ Niti`;
     // Process leads asynchronously
     const rows = [];
     for (const lead of filteredLeads) {
-      const connectionMessage = await generateConnectionMessage(lead.name, lead.connection_degree || lead.connectionDegree, lead.title, lead.company);
+      const connectionMessage = await generateConnectionMessage(lead.name, lead.connectionDegree, lead.title, lead.company);
               const isExcluded = await isExcludedClient(lead.company);
         const blockedStatus = isExcluded ? 'BLOCKED' : '';
       
@@ -3580,7 +3634,7 @@ Niti`;
         escapeCSVField(lead.title || 'Unknown Title'),
         escapeCSVField(lead.company || 'Unknown Company'),
         escapeCSVField(lead.position || 'None found in post'),
-        escapeCSVField(lead.connection_degree || lead.connectionDegree || '3rd'),
+        escapeCSVField(lead.connectionDegree || '3rd'),
         escapeCSVField(connectionMessage),
         escapeCSVField(blockedStatus),
         escapeCSVField(lead.posturl || lead.postUrl || ''),
@@ -3677,7 +3731,7 @@ Niti`;
     // Process posts asynchronously
     const rows = [];
     for (const post of filteredPosts) {
-      const connectionMessage = await generateConnectionMessage(post.name, post.connection_degree || post.connectionDegree, post.title, post.company);
+      const connectionMessage = await generateConnectionMessage(post.name, post.connectionDegree, post.title, post.company);
               const isExcluded = await isExcludedClient(post.company);
         const blockedStatus = isExcluded ? 'BLOCKED' : '';
       

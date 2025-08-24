@@ -170,13 +170,36 @@ const testPosts = [
     post_date: "2024-01-26",
     exact_date: true,
     post_content: "Google is expanding our team! Looking for talented professionals to join us. Amazing opportunities available."
+  },
+  {
+    name: "Alex Thompson",
+    title: "HR Director",
+    company: "Cisco",
+    connection_degree: "1st",
+    post_url: "https://linkedin.com/posts/test13",
+    linkedin_profile_url: "https://linkedin.com/in/alexthompson",
+    post_date: "2024-01-27",
+    exact_date: true,
+    post_content: "Cisco is hiring! We have several HR positions available. Great company culture and benefits."
+  },
+  {
+    name: "Maria Rodriguez",
+    title: "Talent Manager",
+    company: "Microsoft",
+    connection_degree: "1st",
+    post_url: "https://linkedin.com/posts/test14",
+    linkedin_profile_url: "https://linkedin.com/in/mariarodriguez",
+    post_date: "2024-01-28",
+    exact_date: true,
+    post_content: "Microsoft is expanding our team! Looking for talented professionals to join us. Amazing opportunities available."
   }
 ];
 
 // Function to check if a company is a current/past client
 function isCurrentClient(companyName) {
   return clientLists.currentClients.some(client => 
-    companyName.toLowerCase().includes(client.toLowerCase()) ||
+    companyName && client && 
+    companyName.toLowerCase().includes(client.toLowerCase()) || 
     client.toLowerCase().includes(companyName.toLowerCase())
   );
 }
@@ -184,19 +207,81 @@ function isCurrentClient(companyName) {
 // Function to check if a company is excluded
 function isExcludedClient(companyName) {
   return clientLists.excludedClients.some(client => 
-    companyName.toLowerCase().includes(client.toLowerCase()) ||
+    companyName && client && 
+    companyName.toLowerCase().includes(client.toLowerCase()) || 
     client.toLowerCase().includes(companyName.toLowerCase())
   );
 }
 
 // Function to generate connection message based on client type
 function generateConnectionMessage(post) {
-  const { name, connectionDegree, title, company } = post;
+  const { name, connection_degree, title, company } = post;
   
   if (isExcludedClient(company)) {
     return "BLOCKED - Company is excluded";
   }
   
+  // Clean up connection degree
+  const cleanConnectionDegree = connection_degree ? connection_degree.toLowerCase().replace(/\s+/g, '') : '3rd';
+  
+  // Handle first-degree connections first
+  if (cleanConnectionDegree.includes('1st') || cleanConnectionDegree.includes('first')) {
+    if (isCurrentClient(company)) {
+      // Approved vendor message for first-degree connections
+      return `Hi ${name.split(' ')[0]},
+
+I noticed on LinkedIn that you are hiring for your team.
+
+I wanted to take a moment to re-introduce myself and my company, Stage 4 Solutions, an interim staffing company ranked on the Inc. 5000 list five times for consistent growth. We are an approved vendor for "${company}".
+
+For the last 23 years, we have filled gaps across marketing, IT and operations teams - nationwide. We are in the top 9% of staffing firms nationally!
+
+I noticed on LinkedIn that you are hiring for your team. We have quickly filled gaps at our clients such as NetApp, AWS, Salesforce, ServiceNow, and HPE. Here's what our clients say about us: https://www.stage4solutions.com/clientsuccess/testimonials/
+
+We specialize in providing timely, cost-effective, and well-qualified professionals for contract (full or part-time) and contract to perm roles.
+
+I would love to support you in filling any gaps in your team with well-qualified contractors.
+
+What is a good time to talk over the next couple of weeks? Please let me know and I will send you a meeting invite.
+
+Looking forward to our conversation,
+
+Niti`;
+    } else {
+      // Regular first-degree connection message
+      return `Hi ${name.split(' ')[0]},
+
+I noticed on LinkedIn that you are hiring for your team.
+
+I wanted to take a moment to re-introduce myself and my company, Stage 4 Solutions, an interim staffing company ranked on the Inc. 5000 list five times for consistent growth.
+
+For the last 23 years, we have filled gaps across marketing, IT and operations teams - nationwide. We are in the top 9% of staffing firms nationally!
+
+I noticed on LinkedIn that you are hiring for your team. We have quickly filled gaps at our clients such as NetApp, AWS, Salesforce, ServiceNow, and HPE. Here's what our clients say about us: https://www.stage4solutions.com/clientsuccess/testimonials/
+
+We specialize in providing timely, cost-effective, and well-qualified professionals for contract (full or part-time) and contract to perm roles.
+
+I would love to support you in filling any gaps in your team with well-qualified contractors.
+
+What is a good time to talk over the next couple of weeks? Please let me know and I will send you a meeting invite.
+
+Looking forward to our conversation,
+
+Niti`;
+    }
+  }
+  
+  // Handle 2nd degree connections
+  if (cleanConnectionDegree.includes('2nd') || cleanConnectionDegree.includes('second')) {
+    return `Hi ${name.split(' ')[0]},
+
+I am the CEO of Stage 4 Solutions, a consulting and interim staffing company ranked on Inc.5000 list five times. We share many connections on LinkedIn. I noticed your company is growing and thought it would be great to connect.
+
+Thanks!
+Niti`;
+  }
+  
+  // Handle current/past clients (for non-first-degree connections)
   if (isCurrentClient(company)) {
     return `Hi ${name.split(' ')[0]},
 
@@ -204,7 +289,7 @@ Thank you for accepting my connection request.
 
 I wanted to take a moment to introduce myself and my company, Stage 4 Solutions, an interim staffing company ranked on the Inc. 5000 list five times for consistent growth. We previously supported "${company}" as an approved vendor.
 
-For the last 23 years, we have filled gaps across marketing, IT, and operations teams – nationwide. We are in the top 9% of staffing firms nationally!
+For the last 23 years, we have filled gaps across marketing, IT, and operations teams - nationwide. We are in the top 9% of staffing firms nationally!
 
 I noticed on LinkedIn that you are hiring for your team. We have quickly filled gaps at our clients such as NetApp, AWS, Salesforce, ServiceNow, and HPE. Here's what our clients say about us: https://www.stage4solutions.com/clientsuccess/testimonials/
 
@@ -229,36 +314,13 @@ niti@stage4solutions.com
 www.stage4solutions.com/`;
   }
   
-  // Standard message for neutral clients
+  // Standard message for 3rd degree and neutral clients
   return `Hi ${name.split(' ')[0]},
 
-Thank you for accepting my connection request.
+I am the CEO of Stage 4 Solutions, a consulting and interim staffing company ranked on Inc.5000 list five times. I noticed your company is growing and thought it would be great to connect.
 
-I wanted to take a moment to introduce myself and my company, Stage 4 Solutions, an interim staffing company ranked on the Inc. 5000 list five times for consistent growth.
-
-For the last 23 years, we have filled gaps across marketing, IT, and operations teams – nationwide. We are in the top 9% of staffing firms nationally!
-
-I noticed on LinkedIn that you are hiring for your team. We have quickly filled gaps at our clients such as NetApp, AWS, Salesforce, ServiceNow, and HPE. Here's what our clients say about us: https://www.stage4solutions.com/clientsuccess/testimonials/
-
-We specialize in providing timely, cost-effective, and well-qualified professionals for contract (full or part-time) and contract to perm roles.
-
-I would love to support you in filling any gaps in your team with well-qualified contractors.
-
-What is a good time to talk over the next couple of weeks? Please let me know and I will send you a meeting invite.
-
-Looking forward to our conversation,
-
-Niti
-
-*******************************
-
-Niti Agrawal
-CEO
-Stage 4 Solutions, Inc.
-Consulting & Interim Staffing
-niti@stage4solutions.com
-408-887-1033 (cell)
-www.stage4solutions.com/`;
+Thanks!
+Niti`;
 }
 
 // Function to process posts and generate results
@@ -341,37 +403,58 @@ results.csvData.forEach(row => {
 console.log("\n=== Test Summary ===");
 console.log(`Total Posts: ${testPosts.length}`);
 console.log(`Current/Past Client Posts: ${results.currentPastClients.length}`);
-  console.log(`Excluded Client Posts: ${results.excludedClients.length}`);
+console.log(`Excluded Client Posts: ${results.excludedClients.length}`);
 console.log(`Neutral Client Posts: ${results.neutralClients.length}`);
 console.log(`Blocked Posts: ${results.csvData.filter(row => row.blocked_status === "BLOCKED").length}`);
 
 console.log("\n=== Expected Behavior Verification ===");
 
-// Verify current/past client behavior
-const currentPastTest = results.currentPastClients.length === 8;
-console.log(`✓ Current/Past Client Posts (${results.currentPastClients.length}/8): ${currentPastTest ? "PASS" : "FAIL"}`);
+// Verify current/past client behavior (now includes first-degree connections)
+const currentPastTest = results.currentPastClients.length === 9; // 8 original + 1 first-degree (Cisco)
+console.log(`✓ Current/Past Client Posts (${results.currentPastClients.length}/9): ${currentPastTest ? "PASS" : "FAIL"}`);
 
-  // Verify excluded client behavior
-  const excludedTest = results.excludedClients.length === 2;
-  console.log(`✓ Excluded Client Posts (${results.excludedClients.length}/2): ${excludedTest ? "PASS" : "FAIL"}`);
+// Verify excluded client behavior
+const excludedTest = results.excludedClients.length === 2;
+console.log(`✓ Excluded Client Posts (${results.excludedClients.length}/2): ${excludedTest ? "PASS" : "FAIL"}`);
 
-// Verify neutral client behavior
-const neutralTest = results.neutralClients.length === 2;
-console.log(`✓ Neutral Client Posts (${results.neutralClients.length}/2): ${neutralTest ? "PASS" : "FAIL"}`);
+// Verify neutral client behavior (now includes first-degree Microsoft)
+const neutralTest = results.neutralClients.length === 3; // 2 original + 1 first-degree (Microsoft)
+console.log(`✓ Neutral Client Posts (${results.neutralClients.length}/3): ${neutralTest ? "PASS" : "FAIL"}`);
 
 // Verify blocked status
 const blockedTest = results.csvData.filter(row => row.blocked_status === "BLOCKED").length === 2;
 console.log(`✓ Blocked Status (${results.csvData.filter(row => row.blocked_status === "BLOCKED").length}/2): ${blockedTest ? "PASS" : "FAIL"}`);
 
 // Verify connection messages
-const currentPastMessageTest = results.currentPastClients.every(post => 
-  generateConnectionMessage(post).includes("We previously supported")
-);
+const currentPastMessageTest = results.currentPastClients.every(post => {
+  const csvRow = results.csvData.find(row => row.name === post.name && row.company === post.company);
+  const message = csvRow.connection_message;
+  // For first-degree connections, check for "approved vendor" message
+  if (post.connection_degree && (post.connection_degree.toLowerCase().includes('1st') || post.connection_degree.toLowerCase().includes('first'))) {
+    return message.includes("We are an approved vendor for");
+  }
+  // For other connections, check for "previously supported" message
+  return message.includes("We previously supported");
+});
 console.log(`✓ Current/Past Client Messages: ${currentPastMessageTest ? "PASS" : "FAIL"}`);
 
-  const excludedMessageTest = results.excludedClients.every(post =>
-    generateConnectionMessage(post) === "BLOCKED - Company is excluded"
-  );
-  console.log(`✓ Excluded Client Messages: ${excludedMessageTest ? "PASS" : "FAIL"}`);
+const excludedMessageTest = results.excludedClients.every(post => {
+  const csvRow = results.csvData.find(row => row.name === post.name && row.company === post.company);
+  return csvRow.connection_message === "BLOCKED - Company is excluded";
+});
+console.log(`✓ Excluded Client Messages: ${excludedMessageTest ? "PASS" : "FAIL"}`);
+
+// Verify first-degree connection messages
+const firstDegreeTest = results.csvData.filter(row => 
+  row.connection_degree && (row.connection_degree.toLowerCase().includes('1st') || row.connection_degree.toLowerCase().includes('first'))
+).every(row => {
+  const message = row.connection_message;
+  if (isCurrentClient(row.company)) {
+    return message.includes("We are an approved vendor for");
+  } else {
+    return message.includes("Stage 4 Solutions") && !message.includes("approved vendor");
+  }
+});
+console.log(`✓ First-Degree Connection Messages: ${firstDegreeTest ? "PASS" : "FAIL"}`);
 
 console.log("\n=== Test Complete ==="); 

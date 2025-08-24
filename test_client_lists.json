@@ -131,6 +131,28 @@
       "post_date": "2024-01-26",
       "exact_date": true,
       "post_content": "Google is expanding our team! Looking for talented professionals to join us. Amazing opportunities available."
+    },
+    {
+      "name": "Alex Thompson",
+      "title": "HR Director",
+      "company": "Cisco",
+      "connection_degree": "1st",
+      "post_url": "https://linkedin.com/posts/test13",
+      "linkedin_profile_url": "https://linkedin.com/in/alexthompson",
+      "post_date": "2024-01-27",
+      "exact_date": true,
+      "post_content": "Cisco is hiring! We have several HR positions available. Great company culture and benefits."
+    },
+    {
+      "name": "Maria Rodriguez",
+      "title": "Talent Manager",
+      "company": "Microsoft",
+      "connection_degree": "1st",
+      "post_url": "https://linkedin.com/posts/test14",
+      "linkedin_profile_url": "https://linkedin.com/in/mariarodriguez",
+      "post_date": "2024-01-28",
+      "exact_date": true,
+      "post_content": "Microsoft is expanding our team! Looking for talented professionals to join us. Amazing opportunities available."
     }
   ],
   "expected_results": {
@@ -171,13 +193,21 @@
       "Google"
     ],
     "test_scenarios": {
+      "first_degree_approved_vendor_posts": [
+        "Should generate first-degree approved vendor message",
+        "Should include 'We are an approved vendor for [COMPANY NAME]' in message"
+      ],
+      "first_degree_regular_posts": [
+        "Should generate first-degree regular message",
+        "Should NOT include 'approved vendor' in message"
+      ],
       "current_past_client_posts": [
         "Should generate special message mentioning previous relationship",
         "Should include 'We previously supported [COMPANY NAME] as an approved vendor' in message"
       ],
       "excluded_client_posts": [
         "Should be marked as 'BLOCKED' in CSV export",
-                  "Should have connection message set to 'BLOCKED - Company is excluded'"
+        "Should have connection message set to 'BLOCKED - Company is excluded'"
       ],
       "neutral_client_posts": [
         "Should generate standard connection message",
