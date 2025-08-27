@@ -533,13 +533,16 @@ safeLog('[S4S] Content script loaded');
         
         safeLog(`[S4S] Post ${index + 1} final connection degree: "${connectionDegree}"`);
         
+        // Clean the LinkedIn profile URL
+        const cleanedLinkedInUrl = cleanLinkedInProfileUrl(linkedinUrl);
+        
         // Only add posts that have meaningful content
         if (name && (content || headline)) {
           posts.push({ 
             name, 
             content, 
             headline, 
-            linkedinUrl, 
+            linkedinUrl: cleanedLinkedInUrl, 
             age: extractedAge, 
             postDate, 
             exactDate, 
@@ -1380,6 +1383,33 @@ safeLog('[S4S] Content script loaded');
     } catch (error) {
       console.error('[S4S] Error cleaning URL:', error);
       return '';
+    }
+  }
+
+  // Function to clean LinkedIn profile URLs
+  function cleanLinkedInProfileUrl(url) {
+    try {
+      if (!url || typeof url !== 'string') {
+        return '';
+      }
+      
+      // Remove any query parameters and fragments
+      let cleanUrl = url.split('?')[0].split('#')[0];
+      
+      // Ensure it's a proper LinkedIn profile URL
+      if (!cleanUrl.includes('linkedin.com/in/')) {
+        return url; // Return original if not a profile URL
+      }
+      
+      // Ensure it ends with a slash for consistency
+      if (!cleanUrl.endsWith('/')) {
+        cleanUrl += '/';
+      }
+      
+      return cleanUrl;
+    } catch (error) {
+      console.error('[S4S] Error cleaning LinkedIn profile URL:', error);
+      return url; // Return original URL on error
     }
   }
 
