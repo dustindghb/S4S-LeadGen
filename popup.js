@@ -85,11 +85,30 @@ async function ensureContentScriptInjected() {
       company: post.company || 'Unknown Company',
       connection_degree: post.connectionDegree || '3rd',
       post_url: post.postUrl || '',
-      linkedin_profile_url: post.linkedinUrl || '',
+      linkedin_profile_url: normalizeLinkedInProfileUrl(post.linkedinUrl || ''),
       post_date: post.postDate || '',
       exact_date: post.exactDate || false,
       post_content: post.content || ''
     }));
+  }
+
+  // Normalize LinkedIn profile URLs to canonical form
+  function normalizeLinkedInProfileUrl(url) {
+    try {
+      if (!url) return '';
+      if (!url.includes('linkedin.com/in/')) return url;
+      let base = url.split('#')[0].split('?')[0];
+      if (base.startsWith('http://')) base = 'https://' + base.slice(7);
+      if (base.startsWith('https://linkedin.com')) base = base.replace('https://linkedin.com', 'https://www.linkedin.com');
+      const idx = base.indexOf('/in/');
+      if (idx === -1) return base;
+      const after = base.slice(idx + 4);
+      const handle = after.split('/')[0];
+      const canonical = `https://www.linkedin.com/in/${handle}/`;
+      return canonical;
+    } catch (e) {
+      return url;
+    }
   }
   
   // Function to safely stringify JSON with proper encoding
@@ -3584,7 +3603,7 @@ Niti`;
         escapeCSVField(connectionMessage),
         escapeCSVField(blockedStatus),
         escapeCSVField(lead.posturl || lead.postUrl || ''),
-        escapeCSVField(lead.profileurl || lead.linkedin_profile_url || lead.linkedinUrl || ''),
+        escapeCSVField(normalizeLinkedInProfileUrl(lead.profileurl || lead.linkedin_profile_url || lead.linkedinUrl || '')),
         escapeCSVField(lead.post_date || lead.postDate || ''),
         escapeCSVField(lead.post_content || lead.content || '')
       ]);

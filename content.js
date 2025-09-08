@@ -119,7 +119,7 @@ safeLog('[S4S] Content script loaded');
             for (const profileSelector of profileSelectors) {
               const profileLink = nameContainer.querySelector(profileSelector);
               if (profileLink && profileLink.href) {
-                linkedinUrl = profileLink.href;
+                linkedinUrl = normalizeLinkedInProfileUrl(profileLink.href);
                 break;
               }
             }
@@ -178,7 +178,7 @@ safeLog('[S4S] Content script loaded');
                 for (const profileSelector of profileSelectors) {
                   const profileLink = container.querySelector(profileSelector);
                   if (profileLink && profileLink.href) {
-                    linkedinUrl = profileLink.href;
+                    linkedinUrl = normalizeLinkedInProfileUrl(profileLink.href);
                     break;
                   }
                 }
@@ -194,7 +194,7 @@ safeLog('[S4S] Content script loaded');
           if (!linkedinUrl) {
             const anyProfile = post.querySelector('a[href*="/in/"]');
             if (anyProfile && anyProfile.href) {
-              linkedinUrl = anyProfile.href;
+              linkedinUrl = normalizeLinkedInProfileUrl(anyProfile.href);
             }
           }
           
@@ -1220,6 +1220,28 @@ safeLog('[S4S] Content script loaded');
     } catch (error) {
       console.error('[S4S] Error cleaning URL:', error);
       return '';
+    }
+  }
+
+  // Normalize LinkedIn profile URLs to canonical form: https://www.linkedin.com/in/<handle>/
+  function normalizeLinkedInProfileUrl(url) {
+    try {
+      if (!url) return '';
+      if (!url.includes('linkedin.com/in/')) return url;
+      // Strip query and hash
+      let base = url.split('#')[0].split('?')[0];
+      // Ensure starts with https://www.linkedin.com
+      if (base.startsWith('http://')) base = 'https://' + base.slice(7);
+      if (base.startsWith('https://linkedin.com')) base = base.replace('https://linkedin.com', 'https://www.linkedin.com');
+      // Cut after /in/<handle>
+      const idx = base.indexOf('/in/');
+      if (idx === -1) return base;
+      const after = base.slice(idx + 4);
+      const handle = after.split('/')[0];
+      const canonical = `https://www.linkedin.com/in/${handle}/`;
+      return canonical;
+    } catch (e) {
+      return url;
     }
   }
 
