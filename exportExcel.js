@@ -24,7 +24,7 @@ window.exportLeadsToCSV = async function(leads) {
   async function isCurrentClient(companyName) {
     try {
       const result = await chrome.storage.local.get(['clientLists']);
-      const clientLists = result.clientLists || { currentClients: [], blacklistedClients: [] };
+      const clientLists = result.clientLists || { currentClients: [], excludedClients: [] };
       return clientLists.currentClients.some(client => 
         companyName && client && 
         companyName.toLowerCase().includes(client.toLowerCase()) || 

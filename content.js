@@ -1,8 +1,10 @@
 // Anti-detection: Disable console logging in production
-const DEBUG_MODE = false; // Set to false to disable all console logging
+if (typeof window.DEBUG_MODE === 'undefined') {
+  window.DEBUG_MODE = false; // Set to false to disable all console logging
+}
 
 function safeLog(...args) {
-  if (DEBUG_MODE) {
+  if (window.DEBUG_MODE) {
     console.log(...args);
   }
 }

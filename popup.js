@@ -1168,9 +1168,27 @@ JSON:`;
       speedValueDisplay.textContent = speedLabels[sliderValue];
     }
     
-    updateSpeedDisplay();
+    // Load saved scroll speed setting
+    (async () => {
+      try {
+        const savedScrollSpeed = await loadScrollSpeedFromStorage();
+        scrollSpeedSlider.value = savedScrollSpeed;
+        updateSpeedDisplay();
+        console.log('[S4S] Scroll speed setting loaded:', savedScrollSpeed);
+      } catch (error) {
+        console.error('[S4S] Error loading scroll speed setting:', error);
+        // Use default value
+        scrollSpeedSlider.value = 5;
+        updateSpeedDisplay();
+      }
+    })();
     
-    scrollSpeedSlider.addEventListener('input', updateSpeedDisplay);
+    scrollSpeedSlider.addEventListener('input', async () => {
+      updateSpeedDisplay();
+      // Save the new scroll speed setting
+      const newSpeed = parseInt(scrollSpeedSlider.value);
+      await saveScrollSpeedToStorage(newSpeed);
+    });
     
     window.getCurrentSpeedMultiplier = function() {
       const sliderValue = parseInt(scrollSpeedSlider.value);
@@ -1229,7 +1247,7 @@ JSON:`;
     (async () => {
       try {
         const clientLists = await loadClientListsFromStorage();
-        if (clientLists.currentClients.length > 0 || clientLists.blacklistedClients.length > 0) {
+        if (clientLists.currentClients.length > 0 || clientLists.excludedClients.length > 0) {
           updateClientListsUI(clientLists);
           displayClientLists(clientLists);
           console.log('[S4S] Client lists loaded from storage');
@@ -3868,6 +3886,30 @@ Niti`;
     updatePostLimitUI();
     updateLeadLimitUI();
     autoRefreshEnabled = settings.autoRefreshEnabled !== false;
+  }
+
+  // Scroll Speed Storage Functions
+  async function saveScrollSpeedToStorage(scrollSpeed) {
+    try {
+      await chrome.storage.local.set({ scrollSpeed: scrollSpeed });
+      console.log('[S4S] Scroll speed saved to storage:', scrollSpeed);
+      return true;
+    } catch (error) {
+      console.error('[S4S] Error saving scroll speed to storage:', error);
+      return false;
+    }
+  }
+
+  async function loadScrollSpeedFromStorage() {
+    try {
+      const result = await chrome.storage.local.get(['scrollSpeed']);
+      const scrollSpeed = result.scrollSpeed || 5; // Default to 5 (1.4x speed)
+      console.log('[S4S] Scroll speed loaded from storage:', scrollSpeed);
+      return scrollSpeed;
+    } catch (error) {
+      console.error('[S4S] Error loading scroll speed from storage:', error);
+      return 5; // Default to 5 (1.4x speed)
+    }
   }
 
   // Client Lists Management Functions
