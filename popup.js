@@ -1134,6 +1134,49 @@ JSON:`;
     console.log('[S4S] Total posts found reset to 0 for new session');
     updateMetrics(); // Update metrics to show the reset count
 
+    const scrollSpeedSlider = document.getElementById('scrollSpeed');
+    const speedValueDisplay = document.getElementById('speedValue');
+    
+    const speedMultipliers = {
+      1: 1.0,
+      2: 1.1,
+      3: 1.2,
+      4: 1.3,
+      5: 1.4,
+      6: 1.5,
+      7: 1.6,
+      8: 1.7,
+      9: 1.8,
+      10: 2.0
+    };
+    
+    const speedLabels = {
+      1: '1.0x',
+      2: '1.1x',
+      3: '1.2x',
+      4: '1.3x',
+      5: '1.4x',
+      6: '1.5x',
+      7: '1.6x',
+      8: '1.7x',
+      9: '1.8x',
+      10: '2.0x'
+    };
+    
+    function updateSpeedDisplay() {
+      const sliderValue = parseInt(scrollSpeedSlider.value);
+      speedValueDisplay.textContent = speedLabels[sliderValue];
+    }
+    
+    updateSpeedDisplay();
+    
+    scrollSpeedSlider.addEventListener('input', updateSpeedDisplay);
+    
+    window.getCurrentSpeedMultiplier = function() {
+      const sliderValue = parseInt(scrollSpeedSlider.value);
+      return speedMultipliers[sliderValue];
+    };
+
     // Fallback: create statusDiv if missing
     if (!statusDiv) {
       const contentDiv = document.querySelector('.content');
@@ -2115,11 +2158,19 @@ JSON:`;
           return;
         }
         
-        // Start scrolling with longer timeout
-        await sendMessage(tabId, { action: "performSingleScroll" }, 120000); // 2 minutes
+        const speedMultiplier = getCurrentSpeedMultiplier();
+        console.log('[S4S] Starting scroll with speed multiplier:', speedMultiplier);
         
-        // Scrolling completed, but analysis continues
-        statusDiv.textContent = 'Scrolling completed. Analysis continues...';
+        sendMessage(tabId, { action: "performSingleScroll", speedMultiplier: speedMultiplier }, 10000)
+          .then(() => {
+            console.log('[S4S] Scroll operation completed successfully');
+          })
+          .catch(err => {
+            console.log('[S4S] Scroll started in background, continuing with analysis...', err.message);
+          });
+        
+        // Scrolling started in background, analysis continues
+        statusDiv.textContent = 'Scrolling started in background. Analysis continues...';
         updateMetrics();
         
         // Analysis continues until user clicks stop
@@ -2481,8 +2532,8 @@ JSON:`;
         return;
       }
       
-      // Extract current posts with longer timeout
-      const response = await sendMessage(tabId, { action: "extractPosts" }, 30000);
+      // Extract current posts with reasonable timeout
+      const response = await sendMessage(tabId, { action: "extractPosts" }, 15000);
       
       if (response && response.posts) {
         const newPosts = response.posts;

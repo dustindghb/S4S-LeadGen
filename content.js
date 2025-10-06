@@ -1250,7 +1250,7 @@ safeLog('[S4S] Content script loaded');
   let shouldStopScrolling = false;
   let scrollTimeoutId = null;
 
-  async function smoothScrollFeed() {
+  async function smoothScrollFeed(speedMultiplier = 1.0) {
     isScrolling = true;
     shouldStopScrolling = false;
     
@@ -1264,11 +1264,23 @@ safeLog('[S4S] Content script loaded');
     const maxScrollTime = 300000; // 5 minutes maximum scroll time
     const startTime = Date.now();
     
-    // Human-like scroll settings - mimicking HR professional behavior
-    const baseScrollSpeed = { min: 80, max: 250 }; // Variable base speed range
-    const scrollInterval = { min: 300, max: 1200 }; // Variable interval range
+    const baseScrollSpeed = { 
+      min: Math.max(80, 80 * speedMultiplier), 
+      max: Math.max(250, 250 * speedMultiplier) 
+    };
+    const scrollInterval = { 
+      min: Math.max(100, 300 / speedMultiplier), 
+      max: Math.max(200, 1200 / speedMultiplier) 
+    };
     let currentBaseSpeed = getRandomInRange(baseScrollSpeed.min, baseScrollSpeed.max);
     let currentInterval = getRandomInRange(scrollInterval.min, scrollInterval.max);
+    
+    console.log('[S4S] Scroll settings with speed multiplier', speedMultiplier, ':', {
+      baseScrollSpeed,
+      scrollInterval,
+      currentBaseSpeed,
+      currentInterval
+    });
     
     // Track scroll position and movement patterns
     let targetScrollY = window.scrollY;
@@ -1277,31 +1289,60 @@ safeLog('[S4S] Content script loaded');
     let scrollCount = 0;
     let lastSpeedChange = Date.now();
     
-    // Enhanced human behavior patterns
     const behaviorPatterns = {
-      readingPause: { min: 3000, max: 15000 }, // Longer pauses for reading (3-15 seconds)
-      scanningSpeed: { min: 0.3, max: 2.0 }, // Wider speed range when scanning
-      readingSpeed: { min: 0.1, max: 0.6 }, // Even slower when reading
-      pauseFrequency: { min: 2, max: 6 }, // More frequent pauses
-      pauseDuration: { min: 1500, max: 8000 }, // Variable pause duration (longer for reading)
-      microPause: { min: 150, max: 1200 }, // Longer micro pauses
-      speedChangeInterval: { min: 5000, max: 15000 }, // Change base speed every 5-15 seconds
-      scrollBurst: { min: 2, max: 5 }, // Number of wheel clicks in a burst (more realistic)
-      burstPause: { min: 1000, max: 3000 }, // Pause between bursts
-      // New reading-specific patterns
-      deepReadingPause: { min: 8000, max: 25000 }, // Deep reading pauses (8-25 seconds)
-      quickReadPause: { min: 1000, max: 4000 }, // Quick reading pauses (1-4 seconds)
-      interestPause: { min: 5000, max: 12000 } // Pause when finding interesting content (5-12 seconds)
+      readingPause: { 
+        min: Math.max(1000, 3000 / speedMultiplier), 
+        max: Math.max(3000, 15000 / speedMultiplier) 
+      },
+      scanningSpeed: { min: 0.3, max: 2.0 },
+      readingSpeed: { min: 0.1, max: 0.6 },
+      pauseFrequency: { min: 2, max: 6 },
+      pauseDuration: { 
+        min: Math.max(500, 1500 / speedMultiplier), 
+        max: Math.max(1000, 8000 / speedMultiplier) 
+      },
+      microPause: { 
+        min: Math.max(50, 150 / speedMultiplier), 
+        max: Math.max(200, 1200 / speedMultiplier) 
+      },
+      speedChangeInterval: { min: 5000, max: 15000 },
+      scrollBurst: { min: 2, max: 5 },
+      burstPause: { 
+        min: Math.max(300, 1000 / speedMultiplier), 
+        max: Math.max(500, 3000 / speedMultiplier) 
+      },
+      deepReadingPause: { 
+        min: Math.max(2000, 8000 / speedMultiplier), 
+        max: Math.max(5000, 25000 / speedMultiplier) 
+      },
+      quickReadPause: { 
+        min: Math.max(300, 1000 / speedMultiplier), 
+        max: Math.max(800, 4000 / speedMultiplier) 
+      },
+      interestPause: { 
+        min: Math.max(1000, 5000 / speedMultiplier), 
+        max: Math.max(2000, 12000 / speedMultiplier) 
+      }
     };
     
-    // Mouse wheel simulation patterns - realistic wheel "clicks" (slower)
     const wheelPatterns = {
-      // Standard mouse wheel click distances (like actual mouse wheel) - reduced by 30%
-      singleClick: { min: 84, max: 126 }, // One mouse wheel click (120px is standard) * 0.7
-      doubleClick: { min: 168, max: 252 }, // Two rapid clicks * 0.7
-      tripleClick: { min: 252, max: 378 }, // Three rapid clicks * 0.7
-      // Scroll type probabilities - mostly single clicks with occasional bursts
-      scrollTypeChance: { single: 0.75, double: 0.2, triple: 0.05 }
+      singleClick: { 
+        min: Math.max(84, 84 * speedMultiplier), 
+        max: Math.max(126, 126 * speedMultiplier) 
+      },
+      doubleClick: { 
+        min: Math.max(168, 168 * speedMultiplier), 
+        max: Math.max(252, 252 * speedMultiplier) 
+      },
+      tripleClick: { 
+        min: Math.max(252, 252 * speedMultiplier), 
+        max: Math.max(378, 378 * speedMultiplier) 
+      },
+      scrollTypeChance: speedMultiplier >= 2.0 ? 
+        { single: 0.6, double: 0.3, triple: 0.1 } :
+        speedMultiplier > 1.5 ? 
+        { single: 0.7, double: 0.25, triple: 0.05 } :
+        { single: 0.75, double: 0.2, triple: 0.05 }
     };
     
     function getRandomInRange(min, max) {
@@ -1611,16 +1652,17 @@ safeLog('[S4S] Content script loaded');
       }
 
       if (msg.action === "performSingleScroll") {
-        withTimeout(smoothScrollFeed(), 300000) // Increased from 65s to 5 minutes
-          .then(() => {
-            sendResponse({ success: true, stopped: shouldStopScrolling });
-          })
-          .catch(error => {
-            console.error('[S4S] Error in performSingleScroll:', error);
-            sendResponse({ success: false, error: error.message });
-          });
+        const speedMultiplier = msg.speedMultiplier || 1.0;
+        console.log('[S4S] Starting scroll with speed multiplier:', speedMultiplier);
         
-        return true; // Asynchronous response
+        smoothScrollFeed(speedMultiplier).then(() => {
+          console.log('[S4S] Scroll operation completed');
+        }).catch(error => {
+          console.error('[S4S] Error in performSingleScroll:', error);
+        });
+        
+        sendResponse({ success: true, message: "Scrolling started in background" });
+        return false;
       }
 
       if (msg.action === "stopScroll") {
