@@ -1256,8 +1256,30 @@ safeLog('[S4S] Content script loaded');
     isScrolling = true;
     shouldStopScrolling = false;
     
+    console.log('[S4S] Starting smoothScrollFeed with speedMultiplier:', speedMultiplier);
+    console.log('[S4S] Current page state - scrollHeight:', document.documentElement.scrollHeight, 'scrollY:', window.scrollY);
+    
+    // Wait for page to be ready and LinkedIn feed to load
+    let attempts = 0;
+    const maxAttempts = 10;
+    while (attempts < maxAttempts) {
+      const feedElements = document.querySelectorAll('div.feed-shared-update-v2, article.feed-shared-update-v2');
+      if (feedElements.length > 0) {
+        console.log('[S4S] LinkedIn feed detected with', feedElements.length, 'posts');
+        break;
+      }
+      console.log('[S4S] Waiting for LinkedIn feed to load, attempt', attempts + 1);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      attempts++;
+    }
+    
+    if (attempts >= maxAttempts) {
+      console.warn('[S4S] LinkedIn feed not detected after', maxAttempts, 'attempts, proceeding anyway');
+    }
+    
     // Anti-detection: Add random initial delay to avoid detection patterns
     const initialDelay = Math.random() * 2000 + 1000; // 1-3 seconds
+    console.log('[S4S] Waiting initial delay:', initialDelay, 'ms');
     await new Promise(resolve => setTimeout(resolve, initialDelay));
     
     let lastHeight = document.documentElement.scrollHeight;
@@ -1556,7 +1578,18 @@ safeLog('[S4S] Content script loaded');
           
           if (Math.abs(distance) > 5) { // Only scroll if there's meaningful distance
             // Use instant scroll for realistic mouse wheel behavior
+            const beforeScrollY = window.scrollY;
             window.scrollTo(0, targetScrollY);
+            
+            // Verify scroll actually happened
+            setTimeout(() => {
+              const afterScrollY = window.scrollY;
+              if (Math.abs(afterScrollY - targetScrollY) > 10) {
+                console.warn('[S4S] Scroll may have failed - expected:', targetScrollY, 'actual:', afterScrollY);
+                // Try alternative scroll method
+                document.documentElement.scrollTop = targetScrollY;
+              }
+            }, 50);
             
             scrollCount++;
           }
@@ -1630,8 +1663,40 @@ safeLog('[S4S] Content script loaded');
     });
   }
 
+  // Debug function for testing scroll functionality
+  function debugScrollTest() {
+    console.log('[S4S] === SCROLL DEBUG TEST ===');
+    console.log('[S4S] Page ready state:', document.readyState);
+    console.log('[S4S] Current scroll position:', window.scrollY);
+    console.log('[S4S] Page height:', document.documentElement.scrollHeight);
+    console.log('[S4S] Window height:', window.innerHeight);
+    console.log('[S4S] Can scroll:', document.documentElement.scrollHeight > window.innerHeight);
+    
+    // Test basic scroll functionality
+    const testScrollY = window.scrollY + 100;
+    console.log('[S4S] Testing scroll to:', testScrollY);
+    window.scrollTo(0, testScrollY);
+    
+    setTimeout(() => {
+      console.log('[S4S] After test scroll:', window.scrollY);
+      console.log('[S4S] Scroll test result:', Math.abs(window.scrollY - testScrollY) < 10 ? 'SUCCESS' : 'FAILED');
+    }, 100);
+    
+    // Check for LinkedIn feed elements
+    const feedElements = document.querySelectorAll('div.feed-shared-update-v2, article.feed-shared-update-v2');
+    console.log('[S4S] LinkedIn feed elements found:', feedElements.length);
+    
+    // Check for potential blockers
+    const bodyStyle = window.getComputedStyle(document.body);
+    console.log('[S4S] Body overflow:', bodyStyle.overflow);
+    console.log('[S4S] Body height:', bodyStyle.height);
+    
+    console.log('[S4S] === END SCROLL DEBUG TEST ===');
+  }
+
   // Make debug functions available globally
   window.debugRepostDetection = debugRepostDetection;
+  window.debugScrollTest = debugScrollTest;
 
   // Listen for messages from popup or background
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -1657,11 +1722,30 @@ safeLog('[S4S] Content script loaded');
         const speedMultiplier = msg.speedMultiplier || 1.0;
         console.log('[S4S] Starting scroll with speed multiplier:', speedMultiplier);
         
-        smoothScrollFeed(speedMultiplier).then(() => {
-          console.log('[S4S] Scroll operation completed');
-        }).catch(error => {
-          console.error('[S4S] Error in performSingleScroll:', error);
-        });
+        // Check if already scrolling
+        if (isScrolling) {
+          console.warn('[S4S] Already scrolling, ignoring new scroll request');
+          sendResponse({ success: false, message: "Already scrolling" });
+          return false;
+        }
+        
+        // Validate page state before starting
+        if (document.readyState !== 'complete') {
+          console.warn('[S4S] Page not fully loaded, waiting...');
+          window.addEventListener('load', () => {
+            smoothScrollFeed(speedMultiplier).then(() => {
+              console.log('[S4S] Scroll operation completed');
+            }).catch(error => {
+              console.error('[S4S] Error in performSingleScroll:', error);
+            });
+          });
+        } else {
+          smoothScrollFeed(speedMultiplier).then(() => {
+            console.log('[S4S] Scroll operation completed');
+          }).catch(error => {
+            console.error('[S4S] Error in performSingleScroll:', error);
+          });
+        }
         
         sendResponse({ success: true, message: "Scrolling started in background" });
         return false;
@@ -1687,6 +1771,12 @@ safeLog('[S4S] Content script loaded');
       if (msg.action === "debugRepostDetection") {
         debugRepostDetection();
         sendResponse({ success: true, message: "Repost debug completed - check console" });
+        return false; // Synchronous response
+      }
+
+      if (msg.action === "debugScrollTest") {
+        debugScrollTest();
+        sendResponse({ success: true, message: "Scroll debug test completed - check console" });
         return false; // Synchronous response
       }
 
