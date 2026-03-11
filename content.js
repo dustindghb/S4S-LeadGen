@@ -1,7 +1,10 @@
 // Anti-detection: Disable console logging in production
 if (typeof window.DEBUG_MODE === 'undefined') {
-  window.DEBUG_MODE = false; // Set to false to disable all console logging
+  window.DEBUG_MODE = true; // TEMPORARILY enabled for debugging
 }
+
+// Immediate load confirmation
+console.log('[S4S] Content script file loaded at:', new Date().toISOString());
 
 function safeLog(...args) {
   if (window.DEBUG_MODE) {
@@ -65,21 +68,115 @@ safeLog('[S4S] Content script loaded');
   async function extractPosts() {
     try {
       const posts = [];
-      
+
       // More specific selectors for LinkedIn posts to avoid navigation elements
+      // Updated for LinkedIn's 2024-2026 DOM structure
       const postSelectors = [
+        // NEW LinkedIn structure (2026) - uses data-view-name attributes
+        '[data-view-name="feed-full-update"]',
+        'div[role="listitem"][data-view-name="feed-full-update"]',
+        // Posts with componentkey that contain feed updates (2026 variants)
+        'div[role="listitem"][componentkey*="Feed"]',
+        'div[role="listitem"][componentkey*="expanded"]',
+        'div[role="listitem"][componentkey]',
+        // New LinkedIn structure (2024-2025)
+        '[data-id^="urn:li:activity"]',
+        'div[data-urn^="urn:li:activity"]',
+        'article[data-urn^="urn:li:activity"]',
+        // Feed items with data-id
+        '.feed-shared-update-v2[data-id]',
+        '.update-components-actor__container',
+        // Fallback to older selectors
         'div.feed-shared-update-v2[data-urn*="activity"]',
         'article.feed-shared-update-v2[data-urn*="activity"]',
         'div[data-urn*="activity"]:not([data-urn*="navigation"])',
-        'article[data-urn*="activity"]:not([data-urn*="navigation"])'
+        'article[data-urn*="activity"]:not([data-urn*="navigation"])',
+        // Generic feed post containers
+        '.occludable-update',
+        '[data-urn*="urn:li:activity"]'
       ];
-      
+
       let foundPosts = [];
+      let usedSelector = '';
       for (const selector of postSelectors) {
         foundPosts = document.querySelectorAll(selector);
         if (foundPosts.length > 0) {
+          usedSelector = selector;
+          console.log('[S4S] extractPosts: Found', foundPosts.length, 'posts using selector:', selector);
           break;
         }
+      }
+
+      // NEW APPROACH: If standard selectors fail, find posts by looking for profile links
+      if (foundPosts.length === 0) {
+        console.log('[S4S] Trying profile-link based post detection...');
+
+        // Find all profile links in the main feed area
+        const mainEl = document.querySelector('main');
+        if (mainEl) {
+          const profileLinks = mainEl.querySelectorAll('a[href*="/in/"]');
+          console.log('[S4S] Found', profileLinks.length, 'profile links in main');
+
+          // For each profile link, try to find the containing post element
+          const postContainers = new Set();
+
+          for (const link of profileLinks) {
+            // Walk up the DOM tree to find a container that looks like a post
+            let parent = link.parentElement;
+            let depth = 0;
+
+            while (parent && depth < 15) {
+              // Look for containers that have significant size (likely a post)
+              const rect = parent.getBoundingClientRect();
+              const hasSize = rect.width > 400 && rect.height > 100;
+
+              // Check if this container has post-like characteristics
+              const hasMultipleLinks = parent.querySelectorAll('a').length > 2;
+              const hasText = parent.innerText && parent.innerText.length > 100;
+              const isNotTooLarge = rect.height < 2000; // Not the entire feed
+
+              // Check if it's a direct child of main or close to it
+              const isNearMain = parent.closest('main') === mainEl;
+
+              if (hasSize && hasMultipleLinks && hasText && isNotTooLarge && isNearMain) {
+                // Make sure we're not selecting the same container multiple times
+                // by checking if any existing container contains this one or vice versa
+                let isDuplicate = false;
+                for (const existing of postContainers) {
+                  if (existing.contains(parent) || parent.contains(existing)) {
+                    isDuplicate = true;
+                    // Keep the larger container
+                    if (parent.contains(existing)) {
+                      postContainers.delete(existing);
+                      postContainers.add(parent);
+                    }
+                    break;
+                  }
+                }
+                if (!isDuplicate) {
+                  postContainers.add(parent);
+                }
+                break;
+              }
+
+              parent = parent.parentElement;
+              depth++;
+            }
+          }
+
+          foundPosts = Array.from(postContainers);
+          console.log('[S4S] Found', foundPosts.length, 'post containers via profile-link method');
+
+          if (foundPosts.length > 0) {
+            usedSelector = 'profile-link-detection';
+            console.log('[S4S] First post container:', foundPosts[0].tagName, 'classes:', foundPosts[0].className?.substring(0, 60));
+          }
+        }
+      }
+
+      // Debug: Log if no posts found
+      if (foundPosts.length === 0) {
+        console.log('[S4S] No posts found with any selector');
       }
       
       // Process all found posts (removed 50 post limit)
@@ -96,405 +193,180 @@ safeLog('[S4S] Content script loaded');
           post.dataset.s4sPostUrl = postUrl;
         }
         
-        // More targeted approach to find the post author's name and profile
+        // Extract author name and URL - always from the same link so they stay in sync
         let name = '';
         let linkedinUrl = '';
         let nameContainer = null;
-        
-        // First, try to find the specific author name element with the exact class
-        const authorNameElement = post.querySelector('span.sExBUDsubYecFzuEceaNRAkkGmqOjwDiPLAo span[aria-hidden="true"]');
-        
-        if (authorNameElement && authorNameElement.innerText.trim()) {
-          name = authorNameElement.innerText.trim();
-          
-          // Find the closest container that should hold the profile link
-          nameContainer = authorNameElement.closest('.feed-shared-actor__container, .update-components-actor, [class*="actor"]');
-          
-          if (nameContainer) {
-            // Look for the profile link within this specific container
-            const profileSelectors = [
-              'a[data-control-name="actor_profile"]',
-              'a[href*="/in/"]',
-              'a[href*="linkedin.com/in/"]'
-            ];
-            
-            for (const profileSelector of profileSelectors) {
-              const profileLink = nameContainer.querySelector(profileSelector);
-              if (profileLink && profileLink.href) {
-                linkedinUrl = normalizeLinkedInProfileUrl(profileLink.href);
+
+        const profileLinks = post.querySelectorAll('a[href*="/in/"]');
+        for (const link of profileLinks) {
+          // Skip avatar/image links - they have no text, only figures/imgs
+          if (link.querySelector('figure, img') || link.getAttribute('data-view-name') === 'feed-actor-image') {
+            continue;
+          }
+
+          const nameSpan = link.querySelector('span[aria-hidden="true"]');
+          if (nameSpan) {
+            const nameClone = nameSpan.cloneNode(true);
+            nameClone.querySelectorAll('span').forEach(s => s.remove());
+            const cleanName = nameClone.textContent.trim();
+            if (cleanName && cleanName.length > 1 && cleanName.length < 50) {
+              name = cleanName;
+              linkedinUrl = normalizeLinkedInProfileUrl(link.href); // URL from same link as name
+              nameContainer = link;
+              break;
+            }
+          }
+        }
+
+        // Fallback: any profile link with a span containing text
+        if (!name && profileLinks.length > 0) {
+          for (const link of profileLinks) {
+            const nameSpan = link.querySelector('span[aria-hidden="true"]');
+            if (nameSpan) {
+              const nameClone = nameSpan.cloneNode(true);
+              nameClone.querySelectorAll('span').forEach(s => s.remove());
+              const cleanName = nameClone.textContent.trim();
+              if (cleanName && cleanName.length > 1 && cleanName.length < 50) {
+                name = cleanName;
+                linkedinUrl = normalizeLinkedInProfileUrl(link.href);
+                nameContainer = link;
                 break;
               }
             }
           }
         }
-        
-        // If we didn't find the specific author name, try broader search
-        if (!name || !linkedinUrl) {
-          
-          // Try to find the main actor/author container
-          const actorContainers = [
-            '.feed-shared-actor__container',
-            '.update-components-actor',
-            '[class*="actor"]',
-            '.feed-shared-actor'
-          ];
-          
-          for (const containerSelector of actorContainers) {
-            const container = post.querySelector(containerSelector);
-            if (container) {
-              
-              // Look for the author's name within this container
-              const nameSelectors = [
-                'span.feed-shared-actor__name',
-                'a[data-control-name="actor_profile"] span',
-                'span[aria-hidden="true"]',
-                'span.t-bold',
-                'span[class*="name"]'
-              ];
-              
-              for (const nameSelector of nameSelectors) {
-                const nameElem = container.querySelector(nameSelector);
-                if (nameElem && nameElem.innerText.trim() && nameElem.innerText.trim().length > 0) {
-                  const candidateName = nameElem.innerText.trim();
-                  // Filter out common non-name text
-                  if (candidateName.length > 1 && 
-                      candidateName.length < 50 && 
-                      !candidateName.includes('•') &&
-                      !candidateName.includes('Follow') &&
-                      !candidateName.includes('Connect')) {
-                    name = candidateName;
-                    nameContainer = container;
-                    break;
-                  }
-                }
-              }
-              
-              // If we found a name, look for the corresponding profile link
-              if (name) {
-                const profileSelectors = [
-                  'a[data-control-name="actor_profile"]',
-                  'a[href*="/in/"]',
-                  'a[href*="linkedin.com/in/"]'
-                ];
-                
-                for (const profileSelector of profileSelectors) {
-                  const profileLink = container.querySelector(profileSelector);
-                  if (profileLink && profileLink.href) {
-                    linkedinUrl = normalizeLinkedInProfileUrl(profileLink.href);
-                    break;
-                  }
-                }
-                break; // Found both name and container, exit
-              }
-            }
-          }
+
+        if (index < 3) {
+          safeLog(`[S4S] Post ${index + 1} - Author: "${name}", URL: ${linkedinUrl?.substring(0, 50)}`);
         }
         
-        // Fallback: if we didn't find both name and profile, try broader search
-        if (!name || !linkedinUrl) {
-          // Try to find any profile link in the post
-          if (!linkedinUrl) {
-            const anyProfile = post.querySelector('a[href*="/in/"]');
-            if (anyProfile && anyProfile.href) {
-              linkedinUrl = normalizeLinkedInProfileUrl(anyProfile.href);
-            }
-          }
-          
-          // Try to find any name in the post
-          if (!name) {
-            const anyName = post.querySelector('span[aria-hidden="true"]');
-            if (anyName && anyName.innerText.trim()) {
-              const candidateName = anyName.innerText.trim();
-              if (candidateName.length > 1 && candidateName.length < 50) {
-                name = candidateName;
-              }
-            }
-          }
-        }
-        
-        // Extract professional information - focused on headline
+        // Extract date/age
         let headline = '';
-        let age = '';
-        
-        // Extract date and age using enhanced function
         const dateInfo = extractPostDateAndAge(post, index);
         const extractedAge = dateInfo.age;
         const postDate = dateInfo.postDate;
         const exactDate = dateInfo.exactDate;
-        
-        if (index < 3) {
-          safeLog(`[S4S] Post ${index + 1} extracted data:`, {
-            age: extractedAge,
-            postDate: postDate,
-            exactDate: exactDate
-          });
-        }
-        
-        // Extract headline using the specific HTML structure provided
-        const headlineSelectors = [
-          '.update-components-actor__description span[aria-hidden="true"]',
-          '.feed-shared-actor__subline span[aria-hidden="true"]',
-          '.feed-shared-actor__description span[aria-hidden="true"]',
-          'span[data-test-id="actor-subline"] span[aria-hidden="true"]',
-          'span[aria-hidden="true"]'
-        ];
-        
-        // Also check for connection degree in headline elements
-        let foundConnectionDegree = '';
-        
-        safeLog(`[S4S] Post ${index + 1} headline extraction - name: "${name}"`);
-        
-        for (const selector of headlineSelectors) {
-          const headlineElem = post.querySelector(selector);
-          if (headlineElem && headlineElem.innerText.trim()) {
-            const text = headlineElem.innerText.trim();
-            safeLog(`[S4S] Post ${index + 1} found headline candidate: "${text}" using selector: ${selector}`);
-            
-            // Check for connection degree in this text
-            if (!foundConnectionDegree) {
-              const connectionMatch = text.match(/\b(1st|2nd|3rd\+?)\b/i);
-              if (connectionMatch) {
-                foundConnectionDegree = connectionMatch[1];
-                safeLog(`[S4S] Found connection degree in headline element: ${foundConnectionDegree}`);
-              }
+
+        // Extract headline from author link container (LinkedIn 2026 structure)
+        if (nameContainer) {
+          const paragraphs = nameContainer.querySelectorAll('p');
+          for (const p of paragraphs) {
+            const text = p.textContent.trim();
+            // Skip name, connection degree, timestamp, or website link
+            if (text.includes(name) ||
+                text.match(/\b(1st|2nd|3rd\+?)\b/i) ||
+                text.match(/^\d+[hdwmy]\s*•/) ||
+                text.includes('Visit my website') ||
+                text.length < 5 || text.length > 200) {
+              continue;
             }
-            
-            // Less restrictive filtering - just check if it's not the name and has reasonable length
-            if (text && 
-                text !== name && 
-                text.length > 2 && 
-                text.length < 200) {
-              headline = text;
-              safeLog(`[S4S] Post ${index + 1} selected headline: "${headline}"`);
-              break;
-            } else {
-              safeLog(`[S4S] Post ${index + 1} rejected headline candidate: "${text}" (reason: ${text === name ? 'same as name' : text.length <= 2 ? 'too short' : 'too long'})`);
-            }
+            headline = text;
+            break;
           }
         }
-        
-        // Fallback headline extraction
-        if (!headline) {
-          safeLog(`[S4S] Post ${index + 1} trying fallback headline extraction`);
-          const fallbackSelectors = [
-            '.update-components-actor__description',
-            '.feed-shared-actor__subline',
-            '.feed-shared-actor__description',
-            'span[data-test-id="actor-subline"]',
-            '.feed-shared-actor__info'
-          ];
-          
-          for (const selector of fallbackSelectors) {
-            const headlineElem = post.querySelector(selector);
-            if (headlineElem && headlineElem.innerText.trim()) {
-              const text = headlineElem.innerText.trim();
-              safeLog(`[S4S] Post ${index + 1} fallback headline candidate: "${text}" using selector: ${selector}`);
-              
-              if (text && 
-                  text !== name && 
-                  text.length > 2 && 
-                  text.length < 200) {
-                headline = text;
-                safeLog(`[S4S] Post ${index + 1} selected fallback headline: "${headline}"`);
-                break;
-              }
-            }
-          }
-        }
-        
+
+        // Clean headline
         if (headline) {
-          headline = headline
-            .replace(/\s+•\s+.*$/, '')
-            .trim();
-          safeLog(`[S4S] Post ${index + 1} final cleaned headline: "${headline}"`);
-        } else {
-          safeLog(`[S4S] Post ${index + 1} no headline found`);
+          headline = headline.replace(/\s+•\s+.*$/, '').trim();
+        }
+
+        if (index < 3) {
+          safeLog(`[S4S] Post ${index + 1} - Headline: "${headline?.substring(0, 50)}...", Age: ${extractedAge}`);
         }
         
-        // Extract content - including reposted content
-        const contentSelectors = [
-          'div.feed-shared-update-v2__description',
-          'div.feed-shared-text',
-          'span.break-words',
-          'div[data-test-id="post-content"]',
-          '.feed-shared-update-v2__description-wrapper'
-        ];
-        
+        // Extract content - prioritize new LinkedIn 2026 structure
         let content = '';
-        let contentFilteredReason = '';
-        
-        // First, try to extract the main post content
-        for (const selector of contentSelectors) {
-          const contentElem = post.querySelector(selector);
-          if (contentElem && contentElem.innerText.trim()) {
-            const text = contentElem.innerText.trim();
-            if (text.length > 10 && 
-                !text.includes('Follow') && 
-                !text.includes('Connect') && 
-                !text.includes('•') && 
-                !text.includes('1st') && 
-                !text.includes('2nd') && 
-                !text.includes('3rd+')) {
-              content = cleanTextContent(text);
-              safeLog(`[S4S] Post ${index + 1} found main content: "${content.substring(0, 100)}..."`);
+
+        // Try data-testid="expandable-text-box" first (stable across LinkedIn 2025-2026)
+        const expandableTextBox = post.querySelector('[data-testid="expandable-text-box"]');
+        if (expandableTextBox && expandableTextBox.innerText.trim().length > 10) {
+          content = cleanTextContent(expandableTextBox.innerText.trim());
+        }
+
+        // Try feed-commentary (another LinkedIn 2026 variant)
+        if (!content || content.length < 10) {
+          const commentaryElem = post.querySelector('[data-view-name="feed-commentary"]');
+          if (commentaryElem) {
+            const span = commentaryElem.querySelector('span');
+            content = cleanTextContent((span || commentaryElem).innerText.trim());
+          }
+        }
+
+        // Fallback to older selectors if no content found
+        if (!content || content.length < 10) {
+          const fallbackSelectors = [
+            'div.feed-shared-update-v2__description',
+            'div.feed-shared-text',
+            'span.break-words'
+          ];
+          for (const selector of fallbackSelectors) {
+            const elem = post.querySelector(selector);
+            if (elem && elem.innerText.trim().length > 10) {
+              content = cleanTextContent(elem.innerText.trim());
               break;
-            } else {
-              contentFilteredReason = `Filtered out by length/keywords (length: ${text.length}, text: '${text.slice(0, 40)}...')`;
-              safeLog(`[S4S] Post ${index + 1} content found but filtered:`, contentFilteredReason);
             }
           }
         }
-        
-        // Check if this is a repost and extract original content
-        const repostInfo = detectAndExtractRepostContent(post);
-        
-        // If main content is empty or very short, look for reposted content
+
+        // Check for repost content if main content is short
         if (!content || content.length < 50) {
-          safeLog(`[S4S] Post ${index + 1} main content is empty or short, looking for reposted content...`);
-          
-          // If we detected a repost, use the original content
+          const repostInfo = detectAndExtractRepostContent(post);
           if (repostInfo.isRepost && repostInfo.originalContent) {
-            content = repostInfo.originalContent;
-            safeLog(`[S4S] Post ${index + 1} using detected repost content: "${content.substring(0, 100)}..."`);
-          } else {
-            // Look for reposted content - LinkedIn reposts are often in different containers
-            const repostSelectors = [
-              // Repost containers
-              '.feed-shared-update-v2__content',
-              '.feed-shared-update-v2__content-wrapper',
-              '.feed-shared-update-v2__description-wrapper',
-              '.feed-shared-update-v2__description',
-              
-              // Nested content within reposts
-              '.feed-shared-update-v2__content .feed-shared-update-v2__description',
-              '.feed-shared-update-v2__content .feed-shared-text',
-              '.feed-shared-update-v2__content .break-words',
-              
-              // Repost specific selectors
-              '[data-test-id="repost-content"]',
-              '.repost-content',
-              '.shared-update-content',
-              
-              // Fallback: any nested content that might be the original post
-              '.feed-shared-update-v2__content div[class*="description"]',
-              '.feed-shared-update-v2__content div[class*="text"]',
-              '.feed-shared-update-v2__content span[class*="break"]'
-            ];
-            
-            for (const selector of repostSelectors) {
-              const repostElems = post.querySelectorAll(selector);
-              for (const repostElem of repostElems) {
-                const text = repostElem.innerText.trim();
-                if (text && text.length > 20 && 
-                    !text.includes('Follow') && 
-                    !text.includes('Connect') && 
-                    !text.includes('•') && 
-                    !text.includes('1st') && 
-                    !text.includes('2nd') && 
-                    !text.includes('3rd+') &&
-                    text !== content) { // Make sure it's different from what we already have
-                  
-                  const cleanedText = cleanTextContent(text);
-                  if (cleanedText.length > content.length) {
-                    content = cleanedText;
-                    safeLog(`[S4S] Post ${index + 1} found reposted content: "${content.substring(0, 100)}..." using selector: ${selector}`);
-                    break;
-                  }
-                }
-              }
-              if (content && content.length > 50) break; // Found good content, stop searching
-            }
+            content = content ? `${content}\n\n--- Original Post ---\n${repostInfo.originalContent}` : repostInfo.originalContent;
           }
         }
-        
-        // If we have both repost commentary and original content, combine them intelligently
-        if (repostInfo.isRepost && repostInfo.originalContent && content && content !== repostInfo.originalContent) {
-          const commentary = content;
-          const originalContent = repostInfo.originalContent;
-          
-          // Combine them with clear separation
-          content = `${commentary}\n\n--- Original Post ---\n${originalContent}`;
-          safeLog(`[S4S] Post ${index + 1} combined repost commentary with original content`);
-        }
-        
-        // If still no content, try to find any meaningful text in the post
-        if (!content || content.length < 20) {
-          safeLog(`[S4S] Post ${index + 1} still no content, trying broader search...`);
-          
-          // Look for any text content that might be meaningful
-          const allTextElements = post.querySelectorAll('div, span, p');
-          let bestContent = '';
-          
-          for (const elem of allTextElements) {
-            const text = elem.innerText.trim();
-            if (text && text.length > 30 && 
-                !text.includes('Follow') && 
-                !text.includes('Connect') && 
-                !text.includes('•') && 
-                !text.includes('1st') && 
-                !text.includes('2nd') && 
-                !text.includes('3rd+') &&
-                !text.includes(name) && // Don't include the author name
-                text.length > bestContent.length) {
-              
-              const cleanedText = cleanTextContent(text);
-              if (cleanedText.length > bestContent.length) {
-                bestContent = cleanedText;
-              }
-            }
-          }
-          
-          if (bestContent && bestContent.length > content.length) {
-            content = bestContent;
-            safeLog(`[S4S] Post ${index + 1} found content via broad search: "${content.substring(0, 100)}..."`);
+
+        // Detect embedded LinkedIn job cards (even if post text doesn't mention hiring)
+        const jobCardLink = post.querySelector('a[href*="/jobs/view/"]');
+        if (jobCardLink) {
+          const lines = jobCardLink.innerText.split('\n').map(l => l.trim()).filter(l => l && l !== 'View job' && !l.startsWith('$') && !l.includes('benefit') && !l.includes('applicants'));
+          const jobTitle = lines[0] || '';
+          const jobCompany = lines[1] || '';
+          const jobLocation = lines[2] || '';
+          if (jobTitle) {
+            const jobInfo = `[Embedded Job Posting] Job Title: ${jobTitle}${jobCompany ? `, Company: ${jobCompany}` : ''}${jobLocation ? `, Location: ${jobLocation}` : ''}`;
+            content = content ? `${content}\n\n${jobInfo}` : jobInfo;
           }
         }
-        
-        // Debug log if content is still empty after all selectors
-        if (!content) {
-          safeLog(`[S4S] Post ${index + 1} content is empty after all selectors.`, contentFilteredReason, 'Post outerHTML:', post.outerHTML.slice(0, 1000));
-        } else {
-          safeLog(`[S4S] Post ${index + 1} final content length: ${content.length} characters`);
-        }
-        
-        // Clean headline text as well
+
+        // Clean headline
         if (headline) {
           headline = cleanTextContent(headline);
         }
-        
+
         // Extract connection degree
-        let connectionDegree = extractConnectionDegree(post);
-        
-        // If not found by dedicated extraction, use the one found in headline elements
-        if (!connectionDegree && foundConnectionDegree) {
-          connectionDegree = foundConnectionDegree;
-          safeLog(`[S4S] Using connection degree from headline element: ${connectionDegree}`);
+        let connectionDegree = extractConnectionDegree(post) || '3rd';
+
+        if (index < 3) {
+          safeLog(`[S4S] Post ${index + 1} - Content: ${content?.length || 0} chars, Connection: ${connectionDegree}`);
         }
-        
-        // Default to "3rd" if no connection degree found
-        if (!connectionDegree) {
-          connectionDegree = '3rd';
-          safeLog(`[S4S] No connection degree found, defaulting to "3rd"`);
-        }
-        
-        safeLog(`[S4S] Post ${index + 1} final connection degree: "${connectionDegree}"`);
-        
+
         // Only add posts that have meaningful content
         if (name && (content || headline)) {
-          posts.push({ 
-            name, 
-            content, 
-            headline, 
-            linkedinUrl, 
-            age: extractedAge, 
-            postDate, 
-            exactDate, 
+          posts.push({
+            name,
+            content,
+            headline,
+            linkedinUrl,
+            age: extractedAge,
+            postDate,
+            exactDate,
             postUrl,
-            connectionDegree: connectionDegree || 'Unknown' // Add connection degree to post data
+            connectionDegree
           });
         }
       }
-      
+
+      console.log('[S4S] extractPosts: Returning', posts.length, 'processed posts from', foundPosts.length, 'found elements');
+      if (posts.length > 0) {
+        console.log('[S4S] First post sample:', {
+          name: posts[0].name,
+          linkedinUrl: posts[0].linkedinUrl?.substring(0, 50),
+          hasContent: !!posts[0].content
+        });
+      }
+
       return posts;
     } catch (error) {
       console.error('[S4S] Error in extractPosts:', error);
@@ -804,169 +676,54 @@ safeLog('[S4S] Content script loaded');
     }
   }
 
-  // Enhanced function to extract both age and actual date
+  // Extract post age and date
   function extractPostDateAndAge(post, index = 0) {
     let age = '';
     let postDate = null;
     let postDateString = '';
-    
-    safeLog(`[S4S] Starting date extraction for post ${index + 1}`);
-    
-    const timeSelectors = [
-      'time',
-      'span[class*="time"]',
-      'span[class*="ago"]',
-      '.feed-shared-actor__subline time',
-      '.feed-shared-actor__description time',
-      '.update-components-actor__sub-description span[aria-hidden="true"]',
-      'span[aria-hidden="true"]',
-      '.feed-shared-actor__subline span[aria-hidden="true"]',
-      '.update-components-actor__sub-description span[aria-hidden="true"]'
-    ];
-    
-    // First, try to get the actual timestamp from HTML attributes
+
+    // Look for time text patterns like "5h", "3d", "1w"
+    const timeSelectors = ['time', 'span[aria-hidden="true"]', 'p'];
+
     for (const selector of timeSelectors) {
-      const timeElems = post.querySelectorAll(selector);
-      safeLog(`[S4S] Post ${index + 1} found ${timeElems.length} elements with selector: ${selector}`);
-      
-      for (const timeElem of timeElems) {
-        // Check for datetime attribute (most reliable)
-        const datetime = timeElem.getAttribute('datetime');
-        if (datetime) {
-          safeLog(`[S4S] Post ${index + 1} found datetime:`, datetime);
-          postDate = new Date(datetime);
-          postDateString = postDate.toISOString().split('T')[0]; // YYYY-MM-DD format
-          safeLog(`[S4S] Post ${index + 1} exact date from datetime:`, postDateString);
-          break;
-        }
-        
-        // Check for timestamp in data attributes
-        const timestamp = timeElem.getAttribute('data-timestamp') || 
-                         timeElem.getAttribute('data-time') ||
-                         timeElem.getAttribute('data-date');
-        if (timestamp) {
-          safeLog(`[S4S] Post ${index + 1} found timestamp:`, timestamp);
-          postDate = new Date(parseInt(timestamp) * 1000); // Convert Unix timestamp
+      const elems = post.querySelectorAll(selector);
+      for (const elem of elems) {
+        const text = elem.innerText?.trim() || '';
+
+        // Match patterns like "5h •", "3d", "1w ago"
+        const timeMatch = text.match(/^(\d+)([hmdwy])\s*•?/i) || text.match(/(\d+)\s*(hour|day|week|month|year)s?\s*(ago)?/i);
+        if (timeMatch) {
+          const value = parseInt(timeMatch[1]);
+          const unit = timeMatch[2].charAt(0).toLowerCase();
+          age = value + unit;
+
+          // Calculate approximate date
+          const now = new Date();
+          const msMap = { m: 60000, h: 3600000, d: 86400000, w: 604800000, y: 31536000000 };
+          const multiplier = msMap[unit] || (unit === 'o' ? 2592000000 : 86400000); // 'o' for month
+          postDate = new Date(now.getTime() - (value * multiplier));
           postDateString = postDate.toISOString().split('T')[0];
-          safeLog(`[S4S] Post ${index + 1} exact date from timestamp:`, postDateString);
           break;
         }
-        
-        // Check for title attribute with full date
-        const title = timeElem.getAttribute('title');
-        if (title && title.includes(',')) {
-          safeLog(`[S4S] Post ${index + 1} found title:`, title);
-          try {
-            postDate = new Date(title);
-            if (!isNaN(postDate)) {
-              postDateString = postDate.toISOString().split('T')[0];
-              safeLog(`[S4S] Post ${index + 1} exact date from title:`, postDateString);
-              break;
-            }
-          } catch (e) {
-            safeLog(`[S4S] Post ${index + 1} failed to parse title date:`, e);
-          }
+
+        // Check for datetime attribute
+        const datetime = elem.getAttribute?.('datetime');
+        if (datetime) {
+          postDate = new Date(datetime);
+          postDateString = postDate.toISOString().split('T')[0];
+          break;
         }
       }
-      if (postDate) break;
+      if (age || postDate) break;
     }
-    
-    // If we couldn't get exact date, extract age and calculate approximate date
-    if (!postDate) {
-      safeLog(`[S4S] No exact date found, calculating from age for post ${index + 1}`);
-      
-      for (const selector of timeSelectors) {
-        const timeElems = post.querySelectorAll(selector);
-        for (const timeElem of timeElems) {
-          if (timeElem && timeElem.innerText.trim()) {
-            const text = timeElem.innerText.trim();
-            safeLog(`[S4S] Post ${index + 1} time text: "${text}"`);
-            
-            // Extract age as before
-            if (text.match(/\d+[hmdw]/) || text.includes('ago') || text.includes('min') || text.includes('hour') || text.includes('day') || text.includes('week') || text.includes('month') || text.includes('year')) {
-              safeLog(`[S4S] Post ${index + 1} text matches time pattern: "${text}"`);
-              
-              let timeMatch = text.match(/(\d+)\s*(min|minute|hour|day|week|month|year)s?/i);
-              if (!timeMatch) {
-                timeMatch = text.match(/(\d+[hmdw])/);
-              }
-              
-              safeLog(`[S4S] Post ${index + 1} timeMatch:`, timeMatch);
-              
-              if (timeMatch) {
-                const value = parseInt(timeMatch[1]);
-                const unit = timeMatch[2] ? timeMatch[2].toLowerCase() : timeMatch[1].slice(-1);
-                
-                age = value + (timeMatch[2] ? timeMatch[2].charAt(0) : unit);
-                safeLog(`[S4S] Post ${index + 1} extracted age: "${age}" (value: ${value}, unit: ${unit})`);
-                
-                // Calculate approximate date
-                const now = new Date();
-                switch (unit.charAt(0)) {
-                  case 'm':
-                    if (unit === 'min' || unit === 'minute') {
-                      postDate = new Date(now.getTime() - (value * 60 * 1000));
-                    } else { // month
-                      postDate = new Date(now.getTime() - (value * 30 * 24 * 60 * 60 * 1000));
-                    }
-                    break;
-                  case 'h':
-                    postDate = new Date(now.getTime() - (value * 60 * 60 * 1000));
-                    break;
-                  case 'd':
-                    postDate = new Date(now.getTime() - (value * 24 * 60 * 60 * 1000));
-                    break;
-                  case 'w':
-                    postDate = new Date(now.getTime() - (value * 7 * 24 * 60 * 60 * 1000));
-                    break;
-                  case 'y':
-                    postDate = new Date(now.getTime() - (value * 365 * 24 * 60 * 60 * 1000));
-                    break;
-                }
-                
-                if (postDate) {
-                  postDateString = postDate.toISOString().split('T')[0];
-                  safeLog(`[S4S] Post ${index + 1} calculated date:`, postDateString, 'from age:', age);
-                }
-                break;
-              } else {
-                safeLog(`[S4S] Post ${index + 1} no time match found for text: "${text}"`);
-              }
-            } else {
-              safeLog(`[S4S] Post ${index + 1} text does not match time pattern: "${text}"`);
-            }
-          }
-        }
-        if (age) break;
-      }
-    }
-    
-    // If we have exact date but no age, calculate age from date
+
+    // Calculate age from date if we have date but no age
     if (postDate && !age) {
-      const now = new Date();
-      const diffMs = now.getTime() - postDate.getTime();
-      const diffMinutes = Math.floor(diffMs / (1000 * 60));
-      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-      
-      if (diffMinutes < 60) {
-        age = diffMinutes + 'm';
-      } else if (diffHours < 24) {
-        age = diffHours + 'h';
-      } else {
-        age = diffDays + 'd';
-      }
+      const diffHours = Math.floor((Date.now() - postDate.getTime()) / 3600000);
+      age = diffHours < 24 ? diffHours + 'h' : Math.floor(diffHours / 24) + 'd';
     }
-    
-    const result = {
-      age: age,
-      postDate: postDateString,
-      exactDate: !!postDate // boolean indicating if we found exact date vs calculated
-    };
-    
-    safeLog(`[S4S] Post ${index + 1} final result:`, result);
-    
-    return result;
+
+    return { age, postDate: postDateString, exactDate: !!postDate };
   }
 
 
@@ -974,16 +731,44 @@ safeLog('[S4S] Content script loaded');
 
 
   // Improved post URL extraction function
-  // Improved post URL extraction function
   function extractPostUrl(post, index = 0) {
     try {
       let postUrl = '';
-      
-      // Debug logging for first few posts
-      if (index < 3) {
-        safeLog(`[S4S] Analyzing post ${index + 1} for URL extraction`);
+
+      // Method 0 (NEW): Decode activity URN from data-view-tracking-scope byte buffer
+      // LinkedIn 2026 embeds the URN as a UTF-8 byte array in tracking scope JSON
+      if (!postUrl) {
+        const trackingElems = post.querySelectorAll('[data-view-tracking-scope]');
+        for (const elem of trackingElems) {
+          try {
+            const raw = elem.getAttribute('data-view-tracking-scope');
+            if (!raw) continue;
+
+            // Try direct string match first (sometimes URN appears as plain text)
+            const directMatch = raw.match(/"(?:update|sourceUpdate)Urn"\s*:\s*"(urn:li:activity:\d+)"/);
+            if (directMatch) {
+              postUrl = `https://www.linkedin.com/feed/update/${directMatch[1]}/`;
+              break;
+            }
+
+            // Decode the byte array: "data":[123,34,...] -> JSON string -> URN
+            const dataMatch = raw.match(/"data"\s*:\s*\[([^\]]+)\]/);
+            if (dataMatch) {
+              const bytes = dataMatch[1].split(',').map(Number);
+              const jsonStr = String.fromCharCode(...bytes);
+              const urnMatch = jsonStr.match(/"(?:update|sourceUpdate)Urn"\s*:\s*"(urn:li:activity:\d+)"/);
+              if (urnMatch) {
+                postUrl = `https://www.linkedin.com/feed/update/${urnMatch[1]}/`;
+                break;
+              }
+            }
+          } catch (e) { /* skip malformed tracking data */ }
+        }
+        if (postUrl && index < 3) {
+          safeLog(`[S4S] Post ${index + 1} URL from tracking scope:`, postUrl);
+        }
       }
-      
+
       // Method 1: Look for direct post links (most reliable)
       const directPostSelectors = [
         'a[href*="/feed/update/"]',
@@ -1260,54 +1045,160 @@ safeLog('[S4S] Content script loaded');
     console.log('[S4S] Current page state - scrollHeight:', document.documentElement.scrollHeight, 'scrollY:', window.scrollY);
     
     // Wait for page to be ready and LinkedIn feed to load
+    // Updated selectors for LinkedIn 2024-2026 structure
+    const feedSelectors = [
+      '[data-view-name="feed-full-update"]',
+      'div[role="listitem"][componentkey*="Feed"]',
+      '[data-id^="urn:li:activity"]',
+      'div[data-urn^="urn:li:activity"]',
+      '.feed-shared-update-v2',
+      '.occludable-update'
+    ];
+
     let attempts = 0;
     const maxAttempts = 10;
+    let feedFound = false;
+
     while (attempts < maxAttempts) {
-      const feedElements = document.querySelectorAll('div.feed-shared-update-v2, article.feed-shared-update-v2');
-      if (feedElements.length > 0) {
-        console.log('[S4S] LinkedIn feed detected with', feedElements.length, 'posts');
-        break;
+      for (const selector of feedSelectors) {
+        const feedElements = document.querySelectorAll(selector);
+        if (feedElements.length > 0) {
+          console.log('[S4S] LinkedIn feed detected with', feedElements.length, 'elements using selector:', selector);
+          feedFound = true;
+          break;
+        }
       }
+      if (feedFound) break;
+
       console.log('[S4S] Waiting for LinkedIn feed to load, attempt', attempts + 1);
       await new Promise(resolve => setTimeout(resolve, 1000));
       attempts++;
     }
-    
-    if (attempts >= maxAttempts) {
-      console.warn('[S4S] LinkedIn feed not detected after', maxAttempts, 'attempts, proceeding anyway');
+
+    if (!feedFound) {
+      console.warn('[S4S] LinkedIn feed not detected after', maxAttempts, 'attempts');
+      // Log available elements for debugging
+      console.log('[S4S] DEBUG - Looking for scrollable containers...');
+      const mainElement = document.querySelector('main');
+      const scaffoldContent = document.querySelector('.scaffold-finite-scroll__content');
+      const feedContainer = document.querySelector('.feed-shared-update-v2') || document.querySelector('[class*="feed"]');
+      console.log('[S4S] main element:', mainElement ? 'found' : 'not found');
+      console.log('[S4S] scaffold-finite-scroll__content:', scaffoldContent ? 'found' : 'not found');
+      console.log('[S4S] feed container:', feedContainer ? feedContainer.className : 'not found');
+
+      // More aggressive discovery - find ANY elements that might be posts
+      console.log('[S4S] DEBUG - Searching for any post-like elements...');
+      const allDataUrn = document.querySelectorAll('[data-urn]');
+      console.log('[S4S] Elements with data-urn:', allDataUrn.length);
+      if (allDataUrn.length > 0) {
+        console.log('[S4S] First data-urn value:', allDataUrn[0].getAttribute('data-urn'));
+        console.log('[S4S] First data-urn element tag:', allDataUrn[0].tagName, allDataUrn[0].className?.substring(0, 80));
+      }
+
+      const allDataId = document.querySelectorAll('[data-id]');
+      console.log('[S4S] Elements with data-id:', allDataId.length);
+      if (allDataId.length > 0) {
+        for (let i = 0; i < Math.min(3, allDataId.length); i++) {
+          const dataIdVal = allDataId[i].getAttribute('data-id');
+          if (dataIdVal && dataIdVal.includes('urn:li')) {
+            console.log('[S4S] Found data-id with urn:', dataIdVal);
+            console.log('[S4S] Element:', allDataId[i].tagName, allDataId[i].className?.substring(0, 80));
+          }
+        }
+      }
+
+      // Look for any article or div that might contain posts
+      const articles = document.querySelectorAll('article');
+      console.log('[S4S] Article elements:', articles.length);
+
+      // Check for any element containing "activity" in class or data attributes
+      const activityElements = document.querySelectorAll('[class*="activity"], [data-urn*="activity"], [data-id*="activity"]');
+      console.log('[S4S] Elements with "activity":', activityElements.length);
+
+      // Check main element's children to understand structure
+      if (mainElement) {
+        console.log('[S4S] Main element children count:', mainElement.children.length);
+        for (let i = 0; i < Math.min(5, mainElement.children.length); i++) {
+          const child = mainElement.children[i];
+          console.log('[S4S] Main child', i, ':', child.tagName, child.className?.substring(0, 60));
+        }
+      }
+
+      // Check current URL
+      console.log('[S4S] Current URL:', window.location.href);
     }
-    
+
+    // Find the scrollable container (LinkedIn may use a custom scrollable element)
+    function findScrollableContainer() {
+      // Check common LinkedIn scrollable containers
+      const candidates = [
+        document.querySelector('main.scaffold-layout__main'),
+        document.querySelector('.scaffold-layout__main'),
+        document.querySelector('main'),
+        document.querySelector('.authentication-outlet'),
+        document.querySelector('.feed-shared-update-v2')?.closest('[class*="scaffold"]'),
+        document.documentElement
+      ];
+
+      for (const candidate of candidates) {
+        if (candidate && candidate.scrollHeight > candidate.clientHeight) {
+          console.log('[S4S] Found scrollable container:', candidate.tagName, candidate.className?.substring(0, 50));
+          return candidate;
+        }
+      }
+
+      // Fallback: find any element with overflow-y: auto/scroll
+      const allElements = document.querySelectorAll('main, div[class*="scaffold"], div[class*="feed"]');
+      for (const el of allElements) {
+        const style = window.getComputedStyle(el);
+        if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
+          console.log('[S4S] Found scrollable by overflow:', el.tagName, el.className?.substring(0, 50));
+          return el;
+        }
+      }
+
+      console.log('[S4S] No scrollable container found, using window');
+      return null; // Will use window.scrollTo
+    }
+
+    const scrollContainer = findScrollableContainer();
+    const useWindowScroll = !scrollContainer || scrollContainer === document.documentElement;
+    console.log('[S4S] Scroll method:', useWindowScroll ? 'window' : 'container element');
+
     // Anti-detection: Add random initial delay to avoid detection patterns
     const initialDelay = Math.random() * 2000 + 1000; // 1-3 seconds
     console.log('[S4S] Waiting initial delay:', initialDelay, 'ms');
     await new Promise(resolve => setTimeout(resolve, initialDelay));
     
-    let lastHeight = document.documentElement.scrollHeight;
+    // Initialize height from correct element
+    let lastHeight = useWindowScroll ? document.documentElement.scrollHeight : (scrollContainer ? scrollContainer.scrollHeight : document.documentElement.scrollHeight);
     let stuckCount = 0;
     const maxStuckCount = 20; // Be very patient with LinkedIn
     const maxScrollTime = 300000; // 5 minutes maximum scroll time
     const startTime = Date.now();
-    
-    const baseScrollSpeed = { 
-      min: Math.max(80, 80 * speedMultiplier), 
-      max: Math.max(250, 250 * speedMultiplier) 
+
+    const baseScrollSpeed = {
+      min: Math.max(80, 80 * speedMultiplier),
+      max: Math.max(250, 250 * speedMultiplier)
     };
-    const scrollInterval = { 
-      min: Math.max(100, 300 / speedMultiplier), 
-      max: Math.max(200, 1200 / speedMultiplier) 
+    const scrollInterval = {
+      min: Math.max(100, 300 / speedMultiplier),
+      max: Math.max(200, 1200 / speedMultiplier)
     };
     let currentBaseSpeed = getRandomInRange(baseScrollSpeed.min, baseScrollSpeed.max);
     let currentInterval = getRandomInRange(scrollInterval.min, scrollInterval.max);
-    
+
     console.log('[S4S] Scroll settings with speed multiplier', speedMultiplier, ':', {
       baseScrollSpeed,
       scrollInterval,
       currentBaseSpeed,
-      currentInterval
+      currentInterval,
+      initialHeight: lastHeight,
+      scrollMethod: useWindowScroll ? 'window' : 'container'
     });
-    
+
     // Track scroll position and movement patterns
-    let targetScrollY = window.scrollY;
+    let targetScrollY = useWindowScroll ? window.scrollY : (scrollContainer ? scrollContainer.scrollTop : 0);
     let scrollPhase = 0; // 0: reading, 1: scanning, 2: pausing
     let lastPauseTime = 0;
     let scrollCount = 0;
@@ -1547,50 +1438,78 @@ safeLog('[S4S] Content script loaded');
           scrollCount = 0; // Reset scroll count after pause
         }
         
+        // Helper function to perform scroll on the correct element
+        function performScroll(targetY) {
+          if (useWindowScroll) {
+            window.scrollTo(0, targetY);
+          } else if (scrollContainer) {
+            scrollContainer.scrollTop = targetY;
+          }
+        }
+
+        // Helper function to get current scroll position
+        function getCurrentScrollY() {
+          if (useWindowScroll) {
+            return window.scrollY;
+          } else if (scrollContainer) {
+            return scrollContainer.scrollTop;
+          }
+          return 0;
+        }
+
         // Check for scroll burst (rapid mouse wheel clicks)
         if (shouldDoScrollBurst()) {
           const burstCount = getBurstScrolls();
-          
+
           for (let i = 0; i < burstCount && !shouldStopScrolling; i++) {
             const burstDistance = getScrollDistance();
             targetScrollY += burstDistance;
-            
+
             // Instant scroll jump (like mouse wheel click)
-            window.scrollTo(0, targetScrollY);
-            
+            performScroll(targetScrollY);
+
             // Very short delay between wheel clicks (like rapid mouse wheel)
             await new Promise(resolve => setTimeout(resolve, getRandomInRange(30, 100)));
             scrollCount++;
           }
-          
+
           // Pause after burst
           const burstPause = getRandomInRange(behaviorPatterns.burstPause.min, behaviorPatterns.burstPause.max);
           await new Promise(resolve => setTimeout(resolve, burstPause));
-          
+
         } else {
           // Normal single mouse wheel click
           const scrollDistance = getScrollDistance();
           targetScrollY += scrollDistance;
-          
+
           // Instant scroll jump (like single mouse wheel click)
-          const currentY = window.scrollY;
+          const currentY = getCurrentScrollY();
           const distance = targetScrollY - currentY;
-          
+
           if (Math.abs(distance) > 5) { // Only scroll if there's meaningful distance
             // Use instant scroll for realistic mouse wheel behavior
-            const beforeScrollY = window.scrollY;
-            window.scrollTo(0, targetScrollY);
-            
+            performScroll(targetScrollY);
+
             // Verify scroll actually happened
             setTimeout(() => {
-              const afterScrollY = window.scrollY;
+              const afterScrollY = getCurrentScrollY();
               if (Math.abs(afterScrollY - targetScrollY) > 10) {
                 console.warn('[S4S] Scroll may have failed - expected:', targetScrollY, 'actual:', afterScrollY);
-                // Try alternative scroll method
-                document.documentElement.scrollTop = targetScrollY;
+                // Try alternative scroll methods
+                if (useWindowScroll) {
+                  document.documentElement.scrollTop = targetScrollY;
+                  document.body.scrollTop = targetScrollY;
+                } else if (scrollContainer) {
+                  // Try scrollIntoView as fallback
+                  const posts = document.querySelectorAll('[data-id^="urn:li:activity"], .feed-shared-update-v2, .occludable-update');
+                  if (posts.length > 0) {
+                    const lastPost = posts[posts.length - 1];
+                    lastPost.scrollIntoView({ behavior: 'instant', block: 'end' });
+                  }
+                }
               }
             }, 50);
-            
+
             scrollCount++;
           }
         }
@@ -1602,14 +1521,18 @@ safeLog('[S4S] Content script loaded');
         // Anti-detection: Randomize content check intervals
         const contentCheckInterval = Math.random() * 3000 + 4000; // 4-7 seconds
         if (Date.now() % Math.floor(contentCheckInterval) < scrollInterval) {
-          let newHeight = document.documentElement.scrollHeight;
+          // Get height from correct element
+          let newHeight = useWindowScroll ? document.documentElement.scrollHeight : (scrollContainer ? scrollContainer.scrollHeight : document.documentElement.scrollHeight);
           if (newHeight === lastHeight) {
             stuckCount++;
+            console.log('[S4S] Page height unchanged, stuck count:', stuckCount, '/', maxStuckCount);
             if (stuckCount >= maxStuckCount) {
+              console.log('[S4S] Max stuck count reached, stopping scroll');
               break;
             }
           } else {
             stuckCount = 0;
+            console.log('[S4S] New content loaded, height:', newHeight);
           }
           lastHeight = newHeight;
         }
@@ -1636,7 +1559,8 @@ safeLog('[S4S] Content script loaded');
 
   // Debug function to test connection degree extraction
   function debugConnectionDegree() {
-    const posts = document.querySelectorAll('div.feed-shared-update-v2[data-urn*="activity"], article.feed-shared-update-v2[data-urn*="activity"]');
+    // Use updated selectors
+    const posts = document.querySelectorAll('[data-id^="urn:li:activity"], div[data-urn^="urn:li:activity"], .feed-shared-update-v2, .occludable-update');
     
     for (let i = 0; i < Math.min(posts.length, 3); i++) {
       const post = posts[i];
@@ -1652,7 +1576,8 @@ safeLog('[S4S] Content script loaded');
 
   // Debug function for repost detection
   function debugRepostDetection() {
-    const posts = document.querySelectorAll('div.feed-shared-update-v2[data-urn*="activity"], article.feed-shared-update-v2[data-urn*="activity"]');
+    // Use updated selectors
+    const posts = document.querySelectorAll('[data-id^="urn:li:activity"], div[data-urn^="urn:li:activity"], .feed-shared-update-v2, .occludable-update');
     
     posts.forEach((post, index) => {
       const repostInfo = detectAndExtractRepostContent(post);
@@ -1667,30 +1592,69 @@ safeLog('[S4S] Content script loaded');
   function debugScrollTest() {
     console.log('[S4S] === SCROLL DEBUG TEST ===');
     console.log('[S4S] Page ready state:', document.readyState);
-    console.log('[S4S] Current scroll position:', window.scrollY);
-    console.log('[S4S] Page height:', document.documentElement.scrollHeight);
+    console.log('[S4S] Current scroll position (window):', window.scrollY);
+    console.log('[S4S] Page height (document):', document.documentElement.scrollHeight);
     console.log('[S4S] Window height:', window.innerHeight);
-    console.log('[S4S] Can scroll:', document.documentElement.scrollHeight > window.innerHeight);
-    
-    // Test basic scroll functionality
+    console.log('[S4S] Can scroll (window):', document.documentElement.scrollHeight > window.innerHeight);
+
+    // Test all post selectors
+    const allSelectors = [
+      '[data-id^="urn:li:activity"]',
+      'div[data-urn^="urn:li:activity"]',
+      '.feed-shared-update-v2',
+      '.occludable-update',
+      '[data-urn*="urn:li:activity"]',
+      '.scaffold-finite-scroll__content > div',
+      'div.feed-shared-update-v2[data-urn*="activity"]',
+      'article.feed-shared-update-v2[data-urn*="activity"]'
+    ];
+
+    console.log('[S4S] Testing post selectors:');
+    for (const selector of allSelectors) {
+      const elements = document.querySelectorAll(selector);
+      console.log(`[S4S]   ${selector}: ${elements.length} elements`);
+    }
+
+    // Find scrollable containers
+    console.log('[S4S] Checking scrollable containers:');
+    const mainEl = document.querySelector('main');
+    const scaffoldMain = document.querySelector('.scaffold-layout__main');
+    const authOutlet = document.querySelector('.authentication-outlet');
+
+    if (mainEl) {
+      console.log('[S4S]   main: scrollHeight=' + mainEl.scrollHeight + ', clientHeight=' + mainEl.clientHeight);
+    }
+    if (scaffoldMain) {
+      console.log('[S4S]   .scaffold-layout__main: scrollHeight=' + scaffoldMain.scrollHeight + ', clientHeight=' + scaffoldMain.clientHeight);
+    }
+    if (authOutlet) {
+      console.log('[S4S]   .authentication-outlet: scrollHeight=' + authOutlet.scrollHeight + ', clientHeight=' + authOutlet.clientHeight);
+    }
+
+    // Test basic scroll functionality on window
     const testScrollY = window.scrollY + 100;
-    console.log('[S4S] Testing scroll to:', testScrollY);
+    console.log('[S4S] Testing window.scrollTo:', testScrollY);
     window.scrollTo(0, testScrollY);
-    
+
     setTimeout(() => {
-      console.log('[S4S] After test scroll:', window.scrollY);
-      console.log('[S4S] Scroll test result:', Math.abs(window.scrollY - testScrollY) < 10 ? 'SUCCESS' : 'FAILED');
+      console.log('[S4S] After test scroll (window):', window.scrollY);
+      console.log('[S4S] Window scroll test result:', Math.abs(window.scrollY - testScrollY) < 10 ? 'SUCCESS' : 'FAILED');
+
+      // If window scroll failed, try scrolling main element
+      if (Math.abs(window.scrollY - testScrollY) > 10 && mainEl) {
+        console.log('[S4S] Trying to scroll main element...');
+        const mainBefore = mainEl.scrollTop;
+        mainEl.scrollTop = mainBefore + 100;
+        setTimeout(() => {
+          console.log('[S4S] Main element scroll test:', mainEl.scrollTop > mainBefore ? 'SUCCESS' : 'FAILED');
+        }, 100);
+      }
     }, 100);
-    
-    // Check for LinkedIn feed elements
-    const feedElements = document.querySelectorAll('div.feed-shared-update-v2, article.feed-shared-update-v2');
-    console.log('[S4S] LinkedIn feed elements found:', feedElements.length);
-    
+
     // Check for potential blockers
     const bodyStyle = window.getComputedStyle(document.body);
     console.log('[S4S] Body overflow:', bodyStyle.overflow);
-    console.log('[S4S] Body height:', bodyStyle.height);
-    
+
     console.log('[S4S] === END SCROLL DEBUG TEST ===');
   }
 
